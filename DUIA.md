@@ -1,7 +1,7 @@
 # Declaración de Uso de IA (DUIA) - Trabajo Práctico 2
 
 **Asignatura:** Bases de Datos II  
-**Estudiante:** Agustin  
+**Estudiante:** Guzmán, Agustina Micaela  
 **Proyecto / Esquema:** FoodStore  
 **Motor de BD:** PostgreSQL  
 
