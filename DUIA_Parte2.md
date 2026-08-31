@@ -1,7 +1,7 @@
 # Declaración de Uso de IA (DUIA) - Parte 2: Laboratorio de Concurrencia
 
 **Asignatura:** Bases de Datos II  
-**Integrantes:** [Tu Nombre y Apellido]  
+**Integrantes:** Guzmán, Agustina Micaela 
 **Proyecto / Esquema:** FoodStore  
 **Motor de BD:** PostgreSQL  
 
