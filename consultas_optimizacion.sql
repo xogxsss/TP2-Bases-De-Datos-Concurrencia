@@ -15,3 +15,10 @@ ORDER BY precio_lista DESC;
 
 CREATE INDEX idx_producto_precio_stock ON producto(precio_lista DESC, stock);
 
+EXPLAIN ANALYZE
+SELECT id_cliente, nombre, email, telefono
+FROM cliente
+WHERE nombre LIKE 'Cliente de Prueba 15%'
+ORDER BY nombre;
+
+CREATE INDEX idx_cliente_nombre_pattern ON cliente(nombre varchar_pattern_ops);
