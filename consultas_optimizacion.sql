@@ -22,3 +22,9 @@ WHERE nombre LIKE 'Cliente de Prueba 15%'
 ORDER BY nombre;
 
 CREATE INDEX idx_cliente_nombre_pattern ON cliente(nombre varchar_pattern_ops);
+
+EXPLAIN ANALYZE
+SELECT id_pedido, fecha_hora, forma_pago, id_cliente
+FROM pedido
+WHERE fecha_hora BETWEEN NOW() - INTERVAL '30 days' AND NOW()
+ORDER BY fecha_hora DESC;
