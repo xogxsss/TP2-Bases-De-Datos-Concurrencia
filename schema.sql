@@ -122,5 +122,3 @@ VALUES ('EFECTIVO', 1);
 INSERT INTO detalle_pedido (id_pedido, id_producto, cantidad, precio_unitario_historico) 
 VALUES (1, 1, 2, 1000.00);
 
-
-select * from producto;
