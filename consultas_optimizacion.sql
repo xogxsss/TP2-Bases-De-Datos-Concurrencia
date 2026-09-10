@@ -28,3 +28,5 @@ SELECT id_pedido, fecha_hora, forma_pago, id_cliente
 FROM pedido
 WHERE fecha_hora BETWEEN NOW() - INTERVAL '30 days' AND NOW()
 ORDER BY fecha_hora DESC;
+
+CREATE INDEX idx_pedido_fecha_hora ON pedido(fecha_hora DESC);
