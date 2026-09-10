@@ -37,3 +37,21 @@ Todas las propuestas, scripts y explicaciones generadas por la IA fueron **verif
 
 ## 4. Conclusión sobre la Asistencia de la IA
 El uso de la IA permitió acelerar el diseño de triggers y comprender los fundamentos de la teoría de transacciones y niveles de aislamiento (ACID). El proceso de verificación empírica en DBeaver garantizó que ningún script o teoría fuera aceptado de forma pasiva sin su correspondiente validación en el motor real.
+
+## Declaración de Uso de IA - Parte 2 y 3
+
+### 1. Herramienta utilizada
+* **Modelo / Asistente:** Gemini / OpenCode.
+
+### 2. Alcance del uso
+* **Parte 2 (Laboratorio de Optimización):**
+  - Generación y ajuste del script de carga masiva (`insertar_datos_masivos.sql`).
+  - Asistencia en el diseño de los índices estratégicos (`idx_producto_precio_stock`, `idx_cliente_nombre_pattern`, `idx_pedido_fecha_hora`).
+  - Formateo y consolidación de la tabla comparativa de resultados de `EXPLAIN ANALYZE`.
+* **Parte 3 (Lectura Crítica):**
+  - Generación del desglose nodo por nodo en lenguaje natural a partir del plan de ejecución real.
+  - Auditoría y contraste técnico de las explicaciones para la detección de imprecisiones (confusión entre `cost` y milisegundos, estimación vs. filas reales, etc.).
+
+### 3. Validación y Responsabilidad Humana
+* Todas las sentencias SQL, `CREATE INDEX` y planes de ejecución fueron ejecutados, probados y validados manualmente en el entorno local (`foodstore_dev` en PostgreSQL via DBeaver/Terminal).
+* Se verificó la precisión técnica de cada interpretación antes de volcarla al informe final.
