@@ -55,3 +55,11 @@ El uso de la IA permitió acelerar el diseño de triggers y comprender los funda
 ### 3. Validación y Responsabilidad Humana
 * Todas las sentencias SQL, `CREATE INDEX` y planes de ejecución fueron ejecutados, probados y validados manualmente en el entorno local (`foodstore_dev` en PostgreSQL via DBeaver/Terminal).
 * Se verificó la precisión técnica de cada interpretación antes de volcarla al informe final.
+
+### Declaración de Uso de IA - Parte 4 (Consultas bajo especificación precisa)
+
+1. **Herramienta utilizada:** OpenCode (asistente de IA en VS Code) / Gemini.
+2. **Uso realizado:** Generación del script `consultas_resumen_subconsultas.sql` a partir de especificaciones técnicas precisas (tablas, filtros de estado/fecha, funciones de agregación y subconsultas).
+3. **Validación y Responsabilidad Humana:**
+   - Se analizaron y probaron dos versiones estructuralmente distintas (ej. JOIN explícito vs. CTE) para cada requerimiento.
+   - Se validó empíricamente la equivalencia estricta de resultados utilizando el operador `EXCEPT` directo en el motor de PostgreSQL, confirmando diferencias de cero filas.

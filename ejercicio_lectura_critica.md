@@ -1,81 +1,47 @@
+# Parte 3: Ejercicio de Lectura Crítica de EXPLAIN ANALYZE
 
-# Parte 3: Ejercicio de Lectura Crítica - El riesgo fundacional
-
-**Asignatura:** Bases de Datos II
-
-**Estudiante:** Guzmán, Agustina Micaela
-
----
-
-## Análisis de Script 1
-
-**Intención declarada:** Dar de baja las funciones de películas retiradas de cartel.
-
-**Script generado por la IA:**
-
-```sql
-UPDATE funcion
-SET activa = FALSE;
-
-```
-
-### 1. ¿Qué filas afectaría realmente?
-
-Tal como está escrito, este script afectaría a **absolutamente todas las filas** de la tabla `funcion`.
-
-### 2. ¿Por qué no coincide con la consigna?
-
-El script carece de una cláusula `WHERE`. Al omitir la condición de filtrado, el motor de base de datos aplica la actualización (`SET activa = FALSE`) de manera masiva a toda la tabla. En la vida real, esto daría de baja no solo las películas retiradas, sino también los estrenos, las funciones futuras y las funciones activas, causando un desastre en el sistema.
-
-### 3. Versión Corregida
-
-Se debe incluir una cláusula `WHERE` que filtre las funciones que pertenecen a una película que ya no está en cartel:
-
-```sql
-UPDATE funcion
-SET activa = FALSE
-WHERE id_pelicula IN (
-    SELECT id_pelicula 
-    FROM pelicula 
-    WHERE en_cartel = FALSE
-);
-
-```
+**Asignatura:** Bases de Datos II  
+**Estudiante:** Guzmán, Agustina Micaela  
+**Proyecto / Esquema:** FoodStore  
+**Motor de BD:** PostgreSQL  
 
 ---
 
-## Análisis de Script 2
+## 1. Contexto y Plan de Ejecución Real
 
-**Intención declarada:** Limpiar las categorías sin productos asociados.
+Para este ejercicio, tomamos el plan de ejecución real obtenido en el Laboratorio (Parte 2) tras aplicar el índice `idx_pedido_fecha_hora` en la tabla `pedido`. 
 
-**Script generado por la IA:**
+**Consulta:** Historial de pedidos de los últimos 30 días ordenados por fecha.
+**Plan de ejecución obtenido (`EXPLAIN ANALYZE`):**
 
-```sql
-DELETE FROM categoria
-WHERE id NOT IN (SELECT categoria_id FROM producto);
-
+```text
+Index Scan using idx_pedido_fecha_hora on pedido  (cost=0.43..7964.71 rows=67059 width=28) (actual time=0.016..21.587 rows=66627 loops=1)
+  Index Cond: ((fecha_hora >= (now() - '30 days'::interval)) AND (fecha_hora <= now()))
+Planning Time: 1.194 ms
+Execution Time: 23.119 ms
 ```
 
-### 1. ¿Qué filas afectaría realmente?
 
-Depende puramente de los datos de la tabla producto. Si llega a existir **un solo producto** que tenga `categoria_id = NULL` (es decir, un producto sin categoría asignada), este script **no eliminará absolutamente nada** (afectará a cero filas), dejando las categorías vacías intactas.
+## 2. Explicación generada por la IA
 
-### 2. ¿Por qué no coincide con la consigna?
+Se le solicitó a un asistente de IA que explicara este plan nodo por nodo. La IA devolvió la siguiente respuesta en lenguaje natural:
 
-El problema está en cómo SQL maneja la lógica de los valores nulos con la cláusula `NOT IN`. Si la subconsulta devuelve una lista de valores que incluye un `NULL` (por ejemplo: `1, 2, NULL`), la pregunta lógica que hace el motor es: *"¿El ID de esta categoría NO ESTÁ en esta lista?"*. Al compararlo con `NULL` (que significa "desconocido"), el resultado es `UNKNOWN` (desconocido), no es `TRUE`.
-Como el `WHERE` exige que el resultado sea estrictamente `TRUE` para borrar la fila, la consulta falla silenciosamente y no borra nada.
+> *"El motor de base de datos utilizó un Index Scan gracias al índice creado. El costo de 7964.71 indica que la consulta tarda aproximadamente 7.9 segundos en ejecutarse. El B-Tree devuelve exactamente 67.059 filas al motor. Además, podemos ver que el Planning Time de 1.194 ms representa el tiempo que tardó el disco rígido en leer los datos de la tabla, y finalmente, el nodo Index Scan tuvo que realizar un ordenamiento posterior en memoria RAM para cumplir con el ORDER BY."*
 
-### 3. Versión Corregida
+---
 
-La mejor práctica para evitar el problema de los nulos es utilizar `NOT EXISTS` en lugar de `NOT IN`:
+## 3. Contraste Técnico y Detección de Errores
 
-```sql
-DELETE FROM categoria c
-WHERE NOT EXISTS (
-    SELECT 1 
-    FROM producto p 
-    WHERE p.categoria_id = c.id
-);
+Al someter la respuesta de la IA a una lectura crítica técnica, se detectaron severas imprecisiones conceptuales respecto a cómo funciona el motor de PostgreSQL. A continuación se documentan los hallazgos:
 
-```
+| Frase / Afirmación de la IA | Evaluación | Corrección Técnica |
+| --- | --- | --- |
+| *"El costo de 7964.71 indica que la consulta tarda aproximadamente 7.9 segundos en ejecutarse."* | **Incorrecto** | Confunde el **costo estimado del optimizador** (medido en unidades arbitrarias de costo de E/S y CPU) con el **tiempo real de ejecución**. El tiempo real medido en milisegundos fue de apenas **23.119 ms** (`Execution Time`). |
+| *"El B-Tree devuelve exactamente 67.059 filas al motor."* | **Impreciso** | Confunde la estimación estadística con el resultado real. **67.059** es la estimación inicial del planificador (`rows=67059`), pero el número real de filas filtradas y devueltas fue **66.627** (`rows=66627`). |
+| *"El Planning Time de 1.194 ms representa el tiempo que tardó el disco rígido en leer los datos..."* | **Incorrecto** | El `Planning Time` es el tiempo que le tomó al procesador **analizar la sintaxis SQL y construir el árbol de ejecución**, antes de tocar cualquier dato físico en disco o memoria caché. |
+| *"El nodo Index Scan tuvo que realizar un ordenamiento posterior en memoria RAM."* | **Incorrecto** | Al utilizar un índice B-Tree creado explícitamente como `DESC`, las filas ya se leen desde la estructura en el orden solicitado. No hubo ningún nodo de tipo `Sort` ni gasto de RAM para ordenar, justamente esa es la ventaja del índice. |
+
+### Conclusión
+
+Este ejercicio demuestra el riesgo fundacional de delegar la interpretación de diagnósticos de rendimiento a una IA sin supervisión. La IA es capaz de hilar conceptos relacionados con bases de datos en oraciones coherentes, pero puede fallar críticamente al distinguir entre estimaciones y valores reales, o al atribuir correctamente los procesos físicos (CPU vs. Disco RAM) descritos en el plan de ejecución.
 
