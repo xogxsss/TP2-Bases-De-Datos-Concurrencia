@@ -31,9 +31,6 @@ WHERE activo = TRUE;
 -- Corremos: 
 -- DROP INDEX idx_comp_estrategia1;
 
-DROP INDEX idx_comp_estrategia1;
-
-
 -- -----------------------------------------------------------------------------
 -- PASO 3: PROBAR ESTRATEGIA 2 (Reescritura con Subconsulta)
 -- Modifica la consulta para evitar el JOIN gigante. No requiere índice nuevo.
@@ -55,6 +52,7 @@ LIMIT 20;
 CREATE INDEX idx_comp_estrategia3 
 ON producto USING BRIN (precio_lista, stock);
 
--- (Corré el EXPLAIN ANALYZE del Paso 1 para ver qué daño o mejora causó)
--- Al terminar, borralo:
+-- (Corremos EXPLAIN ANALYZE del Paso 1 para ver qué daño o mejora causó)
+-- Corremos:
 -- DROP INDEX idx_comp_estrategia3;
+
