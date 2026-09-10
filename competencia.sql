@@ -54,5 +54,5 @@ ON producto USING BRIN (precio_lista, stock);
 
 -- (Corremos EXPLAIN ANALYZE del Paso 1 para ver qué daño o mejora causó)
 -- Corremos:
--- DROP INDEX idx_comp_estrategia3;
+--  DROP INDEX idx_comp_estrategia3;
 

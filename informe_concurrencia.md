@@ -12,7 +12,7 @@
 
 ### 1. Reproducción del escenario y comandos exactos
 - **Sesión 1 (T1):**
-  ```sql
+  ```
   BEGIN ISOLATION LEVEL READ COMMITTED;
 
   SELECT id_producto, nombre, precio_lista
@@ -23,7 +23,7 @@
 ```
 
 * **Sesión 2 (T2):**
-```sql
+```
 BEGIN;
 
 UPDATE producto 
@@ -36,7 +36,7 @@ COMMIT;
 
 
 * **Sesión 1 (T3):**
-```sql
+```
 SELECT id_producto, nombre, precio_lista
 FROM producto 
 WHERE id_producto = 1;
@@ -69,7 +69,7 @@ Se repitió el experimento iniciando la Sesión 1 con `BEGIN ISOLATION LEVEL REP
 ### 1. Reproducción del escenario y comandos exactos
 
 * **Sesión 1 (T1):**
-```sql
+```
 BEGIN;
 
 SELECT id_producto, nombre, precio_lista 
@@ -82,7 +82,7 @@ FOR UPDATE;
 
 
 * **Sesión 2 (T2):**
-```sql
+```
 BEGIN;
 
 SELECT id_producto, nombre, precio_lista 
@@ -95,7 +95,7 @@ FOR UPDATE;
 
 
 * **Sesión 1 (T3):**
-```sql
+```
 COMMIT;
 -- Resultado: Apenas se ejecuta COMMIT en la Sesión 1, la Sesión 2 se destraba automáticamente y muestra el resultado de su SELECT.
 
@@ -103,7 +103,7 @@ COMMIT;
 
 
 * **Sesión 2 (Cierre):**
-```sql
+```
 ROLLBACK;
 
 ```
@@ -129,7 +129,7 @@ Se comprobó interactivamente en DBeaver observando cómo la pestaña de la Sesi
 ### 1. Reproducción del escenario y comandos exactos
 
 * **Sesión 1 (T1):**
-```sql
+```
 BEGIN ISOLATION LEVEL READ COMMITTED;
 
 SELECT count(*) 
@@ -141,7 +141,7 @@ WHERE activo = TRUE;
 
 
 * **Sesión 2 (T2):**
-```sql
+```
 BEGIN;
 
 INSERT INTO producto (nombre, precio_lista, activo, id_categoria) 
@@ -153,7 +153,7 @@ COMMIT;
 
 
 * **Sesión 1 (T3):**
-```sql
+```
 SELECT count(*) 
 FROM producto 
 WHERE activo = TRUE;

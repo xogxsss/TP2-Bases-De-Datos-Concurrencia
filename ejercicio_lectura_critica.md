@@ -14,7 +14,7 @@ Para este ejercicio, tomamos el plan de ejecución real obtenido en el Laborator
 **Consulta:** Historial de pedidos de los últimos 30 días ordenados por fecha.
 **Plan de ejecución obtenido (`EXPLAIN ANALYZE`):**
 
-```text
+```
 Index Scan using idx_pedido_fecha_hora on pedido  (cost=0.43..7964.71 rows=67059 width=28) (actual time=0.016..21.587 rows=66627 loops=1)
   Index Cond: ((fecha_hora >= (now() - '30 days'::interval)) AND (fecha_hora <= now()))
 Planning Time: 1.194 ms

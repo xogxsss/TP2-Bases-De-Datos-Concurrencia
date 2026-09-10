@@ -12,7 +12,7 @@ Este archivo guía a los agentes de IA para evitar errores comunes y agilizar el
 Antes de confirmar o ejecutar cualquier script DDL o DML:
 1. Pruébalo únicamente en la base de datos de desarrollo/desecho (`foodstore_dev`).
 2. Pruébalo siempre dentro de una transacción con ROLLBACK para verificar sintaxis y comportamiento sin alterar el estado:
-   ```sql
+   ```
    BEGIN;
    -- Código a probar
    ROLLBACK;
