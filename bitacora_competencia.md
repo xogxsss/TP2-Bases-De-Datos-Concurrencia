@@ -1,4 +1,3 @@
-```
 # Bitácora de Competencia - TP3 (Cierre de Práctica)
 
 **Asignatura:** Bases de Datos II  
@@ -19,7 +18,7 @@
 
 ### Estrategia 1: Índice Parcial Compuesto Extremo
 * **Script aplicado:**
-  ```
+```
   CREATE INDEX idx_comp_estrategia1 
   ON producto (id_categoria, precio_lista, stock DESC) 
   WHERE activo = TRUE;
@@ -39,7 +38,7 @@
 
 * **Script aplicado:**
 ```
-CREATE INDEX idx_comp_estrategia3 ON producto USING BRIN (precio_lista, stock);
+  CREATE INDEX idx_comp_estrategia3 ON producto USING BRIN (precio_lista, stock);
 
 ```
 
@@ -53,4 +52,3 @@ CREATE INDEX idx_comp_estrategia3 ON producto USING BRIN (precio_lista, stock);
 * **Estrategia Seleccionada:** Índice Parcial Compuesto (`idx_comp_estrategia1`).
 * **Veredicto Final:** La experimentación empírica con `EXPLAIN ANALYZE` demostró que la indexación estructural precisa es la única alternativa que modifica de raíz el plan físico de PostgreSQL, eliminando costos ocultos de procesamiento y garantizando la escalabilidad real de la base de datos en entornos de producción.
 
-```

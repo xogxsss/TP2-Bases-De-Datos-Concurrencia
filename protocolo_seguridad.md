@@ -9,10 +9,10 @@ Nunca se ejecutan scripts de prueba o modificaciones generadas por IA sobre la b
 
 * **Procedimiento:** Toda modificación se realiza sobre una base de datos de desarrollo/desecho creada específicamente para pruebas.
 * **Comandos en mi entorno:**
-  ```
-    # Creación de la base de datos de copia/trabajo desde la terminal de PostgreSQL
-    createdb -U postgres foodstore_dev
-  ```
+```
+  # Creación de la base de datos de copia/trabajo desde la terminal de PostgreSQL
+  createdb -U postgres foodstore_dev
+```
 
 ## 2. Transacción de Prueba (`BEGIN` y `ROLLBACK`)
 Todo script que escriba o modifique (`INSERT`, `UPDATE`, `DELETE`) se ejecuta de manera transaccional para inspeccionar el impacto ANTES de confirmar.

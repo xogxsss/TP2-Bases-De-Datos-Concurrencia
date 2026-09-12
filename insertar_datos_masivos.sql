@@ -5,12 +5,13 @@
 -- Motor: PostgreSQL
 -- =============================================================================
 
-BEGIN;
+BEGIN; -- Tratamos todas las transacciones a continuación como una sola.
 
 -- 1. Crear tabla temporal para categorías
 CREATE TEMP TABLE temp_cats AS 
 SELECT id_categoria, (row_number() OVER (ORDER BY id_categoria)) - 1 AS rn
 FROM categoria;
+-- rn -> Contador auxiliar para posicionar 'algo'; en este caso, las categorías
 
 -- Verificar que hay al menos una categoría para evitar divisiones por cero
 DO $$
@@ -97,4 +98,10 @@ DROP TABLE temp_clis;
 DROP TABLE temp_peds;
 DROP TABLE temp_prods_activos;
 
-COMMIT;
+COMMIT; -- Si hay errores antes del commit, la transacción puede cancelarse.
+
+-- Actualizar estadísticas del optimizador para las tablas afectadas
+ANALYZE producto;
+ANALYZE cliente;
+ANALYZE pedido;
+ANALYZE detalle_pedido;

@@ -1,4 +1,3 @@
-```markdown
 # Informe de Concurrencia y Niveles de Aislamiento
 
 **Asignatura:** Bases de Datos II  
@@ -12,7 +11,7 @@
 
 ### 1. Reproducción del escenario y comandos exactos
 - **Sesión 1 (T1):**
-  ```
+```
   BEGIN ISOLATION LEVEL READ COMMITTED;
 
   SELECT id_producto, nombre, precio_lista
@@ -24,29 +23,27 @@
 
 * **Sesión 2 (T2):**
 ```
-BEGIN;
+  BEGIN;
 
-UPDATE producto 
-SET precio_lista = 1500.00 
-WHERE id_producto = 1;
+  UPDATE producto 
+  SET precio_lista = 1500.00 
+  WHERE id_producto = 1;
 
-COMMIT;
+  COMMIT;
 
 ```
 
 
 * **Sesión 1 (T3):**
 ```
-SELECT id_producto, nombre, precio_lista
-FROM producto 
-WHERE id_producto = 1;
--- Resultado: Devuelve 1500.00 (El precio cambió en medio de la misma transacción).
+  SELECT id_producto, nombre, precio_lista
+  FROM producto 
+  WHERE id_producto = 1;
+  -- Resultado: Devuelve 1500.00 (El precio cambió en medio de la misma transacción).
 
-ROLLBACK;
+  ROLLBACK;
 
 ```
-
-
 
 ### 2. Explicación brindada por la IA
 
@@ -70,41 +67,41 @@ Se repitió el experimento iniciando la Sesión 1 con `BEGIN ISOLATION LEVEL REP
 
 * **Sesión 1 (T1):**
 ```
-BEGIN;
+  BEGIN;
 
-SELECT id_producto, nombre, precio_lista 
-FROM producto 
-WHERE id_producto = 1 
-FOR UPDATE;
--- Resultado: Aplica bloqueo exclusivo a nivel de fila sobre el producto 1.
+  SELECT id_producto, nombre, precio_lista 
+  FROM producto 
+  WHERE id_producto = 1 
+  FOR UPDATE;
+  -- Resultado: Aplica bloqueo exclusivo a nivel de fila sobre el producto 1.
 
 ```
 
 
 * **Sesión 2 (T2):**
 ```
-BEGIN;
+  BEGIN;
 
-SELECT id_producto, nombre, precio_lista 
-FROM producto 
-WHERE id_producto = 1 
-FOR UPDATE;
--- Resultado: La consulta se queda suspendida en pantalla ("Executing... / Esperando").
+  SELECT id_producto, nombre, precio_lista 
+  FROM producto 
+  WHERE id_producto = 1 
+  FOR UPDATE;
+  -- Resultado: La consulta se queda suspendida en pantalla ("Executing... / Esperando").
 
 ```
 
 
 * **Sesión 1 (T3):**
 ```
-COMMIT;
--- Resultado: Apenas se ejecuta COMMIT en la Sesión 1, la Sesión 2 se destraba automáticamente y muestra el resultado de su SELECT.
+  COMMIT;
+  -- Resultado: Apenas se ejecuta COMMIT en la Sesión 1, la Sesión 2 se destraba automáticamente y muestra el resultado de su SELECT.
 
 ```
 
 
 * **Sesión 2 (Cierre):**
 ```
-ROLLBACK;
+  ROLLBACK;
 
 ```
 
@@ -130,36 +127,36 @@ Se comprobó interactivamente en DBeaver observando cómo la pestaña de la Sesi
 
 * **Sesión 1 (T1):**
 ```
-BEGIN ISOLATION LEVEL READ COMMITTED;
+  BEGIN ISOLATION LEVEL READ COMMITTED;
 
-SELECT count(*) 
-FROM producto 
-WHERE activo = TRUE;
--- Resultado: Devuelve la cantidad inicial de productos activos (ej. 5).
+  SELECT count(*) 
+  FROM producto 
+  WHERE activo = TRUE;
+  -- Resultado: Devuelve la cantidad inicial de productos activos (ej. 5).
 
 ```
 
 
 * **Sesión 2 (T2):**
 ```
-BEGIN;
+  BEGIN;
 
-INSERT INTO producto (nombre, precio_lista, activo, id_categoria) 
-VALUES ('Empanada de Jamón y Queso', 1200.00, TRUE, 1);
+  INSERT INTO producto (nombre, precio_lista, activo, id_categoria) 
+  VALUES ('Empanada de Jamón y Queso', 1200.00, TRUE, 1);
 
-COMMIT;
+  COMMIT;
 
 ```
 
 
 * **Sesión 1 (T3):**
 ```
-SELECT count(*) 
-FROM producto 
-WHERE activo = TRUE;
--- Resultado: Devuelve 6 (Aparece la fila "fantasma" insertada por la Sesión 2).
+  SELECT count(*) 
+  FROM producto 
+  WHERE activo = TRUE;
+  -- Resultado: Devuelve 6 (Aparece la fila "fantasma" insertada por la Sesión 2).
 
-ROLLBACK;
+  ROLLBACK;
 
 ```
 
