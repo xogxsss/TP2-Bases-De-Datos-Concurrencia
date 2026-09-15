@@ -145,3 +145,19 @@
 * **Qué se modificó o descartó**: Se corrigieron errores iniciales respecto al esquema físico real de la base de datos, eliminando referencias a columnas de borrado lógico inexistentes (`activo`) en las tablas transaccionales (`pedido` y `cliente`) y limitándolas estrictamente a `producto` y `categoria`. Asimismo, se ajustaron alias en las columnas de salida (`nombre_completo`) para asegurar la compatibilidad exacta en las pruebas de comparación.
 
 * **Verificación realizada**: Ejecución y validación de los scripts en PostgreSQL, comprobando que las consultas devuelven los resultados esperados sin colapsar filas y que las pruebas de equivalencia con `EXCEPT` arrojan exactamente cero filas en ambas direcciones.
+
+---
+
+### DUIA - TP4 Parte 4 (Competencia de optimización entre equipos)
+
+* **Herramienta**: OpenCode / Asistente de IA (Gemini).
+
+* **Spec o prompt utilizado**: *"Evaluar el plan de ejecución `EXPLAIN ANALYZE` de la consulta analítica con múltiples JOINs y agregaciones globales, y proponer estrategias de indexación o reescritura para mejorar el rendimiento en la competencia."*
+
+* **Qué generó**: Sugerencias automáticas de creación de índices B-Tree en las claves foráneas de las tablas involucradas (`detalle_pedido`, `producto`) para acelerar el proceso de unión (`JOIN`).
+
+* **Qué se aceptó**: La metodología analítica para medir tiempos mediante `EXPLAIN ANALYZE` y la comprensión del flujo de datos en el plan inicial (identificación de barridos secuenciales en paralelo y hashes).
+
+* **Qué se modificó o descartó**: Se descartó la aplicación ciega de los índices sugeridos por la IA. Tras realizar pruebas de rendimiento reales en el motor, se comprobó mediante pensamiento crítico que el optimizador de PostgreSQL descartaba dichos índices de forma nativa debido a que las agregaciones globales masivas hacen más eficiente un *Parallel Seq Scan*. Por ende, se documentó que la "mejora" consistió en validar y justificar técnicamente por qué el plan nativo original era el óptimo, evitando sobrecargar el motor con índices innecesarios.
+
+* **Verificación realizada**: Ejecución comparativa de planes de ejecución antes y después de las propuestas de indexación, registrando los tiempos reales en milisegundos (~197.6 ms) y documentando rigurosamente el proceso de experimentación en la bitácora de la competencia.
