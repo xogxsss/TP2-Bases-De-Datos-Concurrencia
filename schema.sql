@@ -1,6 +1,3 @@
--- SQLBook: Code
-
-
 /*
 =============================================================================
 ESQUEMA DEFINITIVO - FOOD STORE
@@ -194,18 +191,3 @@ Acelera la búsqueda de productos vigentes y en stock filtrados por su categorí
 Creamos un índice para acceder a las categorías activas
 */
 CREATE INDEX idx_producto_categoria_activo ON producto (id_categoria, activo) WHERE activo = TRUE;
-
-/* Datos iniciales de prueba -> TP2 */
-INSERT INTO categoria (nombre) VALUES ('Pizzas'), ('Bebidas');
-
-INSERT INTO producto (nombre, precio_lista, stock, id_categoria) 
-VALUES ('Muzzarella', 1000.00, 10, 1), ('Coca 1.5L', 800.00, 20, 2);
-
-INSERT INTO cliente (email, nombre, direccion) 
-VALUES ('ana@gmail.com', 'Ana Gómez', 'Calle Falsa 123');
-
-INSERT INTO pedido (forma_pago, id_cliente) 
-VALUES ('EFECTIVO', 1);
-
-INSERT INTO detalle_pedido (id_pedido, id_producto, cantidad, precio_unitario_historico) 
-VALUES (1, 1, 2, 1000.00);
