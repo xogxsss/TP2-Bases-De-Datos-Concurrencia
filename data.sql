@@ -1,4 +1,3 @@
--- SQLBook: Code
 -- =============================================================================
 -- SCRIPT DE INSERCIÓN MASIVA DE DATOS DE PRUEBA - FOOD STORE
 -- Archivo: insertar_datos_masivos.sql

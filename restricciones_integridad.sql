@@ -1,4 +1,3 @@
--- SQLBook: Code
 -- =============================================================================
 -- RESTRICCIONES DE INTEGRIDAD ADICIONALES - FOOD STORE
 -- Archivo: restricciones_integridad.sql
