@@ -34,8 +34,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 /*
-    Borra el disparador anterior si ya existía en `pedido`para que no se duplique
-    o genere error al volver a ejecutar el script de creación.
+Borra el disparador anterior si ya existía en `pedido`para que no se duplique
+o genere error al volver a ejecutar el script de creación.
 */
 DROP TRIGGER IF EXISTS trg_validar_fecha_pedido ON pedido;
 
@@ -52,7 +52,6 @@ CREATE TRIGGER trg_validar_fecha_pedido
 BEFORE INSERT OR UPDATE ON pedido
 FOR EACH ROW
 EXECUTE FUNCTION fn_validar_fecha_pedido();
-
 
 -- -----------------------------------------------------------------------------
 -- REGLA 2: No agregar productos inactivos en el detalle de pedido
@@ -98,7 +97,6 @@ BEFORE INSERT ON detalle_pedido
 FOR EACH ROW
 EXECUTE FUNCTION fn_validar_producto_activo();
 
-
 -- Probar que las excepciones de OpenCode funcionan (Transacción aislada)
 
 -- PRUEBA 1: Probar fecha futura en pedido
@@ -108,11 +106,20 @@ EXECUTE FUNCTION fn_validar_producto_activo();
 `ROLLBACK;`: Revierte los cambios de la prueba para dejar la base de datos intacta.
 */
 BEGIN;
-INSERT INTO pedido (fecha_hora, forma_pago, id_cliente) 
-VALUES (NOW() + INTERVAL '2 days', 'EFECTIVO', 1);
+
+INSERT INTO
+    pedido (
+        fecha_hora,
+        forma_pago,
+        id_cliente
+    )
+VALUES (
+        NOW() + INTERVAL '2 days',
+        'EFECTIVO',
+        1
+    );
 -- (Acá PostgreSQL debe tirar la excepción del trigger de OpenCode)
 ROLLBACK;
-
 
 -- PRUEBA 2: Probar producto inactivo
 /*
@@ -122,9 +129,17 @@ ROLLBACK;
 `ROLLBACK;`: Deshace todas las modificaciones de la prueba.
 */
 BEGIN;
-UPDATE producto SET activo = FALSE WHERE id_producto = 2; -- Desactivamos la Coca-Cola
 
-INSERT INTO detalle_pedido (id_pedido, id_producto, cantidad, precio_unitario_historico) 
+UPDATE producto SET activo = FALSE WHERE id_producto = 2;
+-- Desactivamos la Coca-Cola
+
+INSERT INTO
+    detalle_pedido (
+        id_pedido,
+        id_producto,
+        cantidad,
+        precio_unitario_historico
+    )
 VALUES (1, 2, 1, 800.00);
 -- (Acá PostgreSQL debe tirar la excepción del trigger de OpenCode)
 ROLLBACK;
