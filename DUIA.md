@@ -373,3 +373,98 @@ Redacción estructurada de las 6 instancias DUIA con campos estandarizados (herr
 
 - Contraste de cada valor numérico de la DUIA contra las salidas reales de `EXPLAIN ANALYZE` registradas en `informe_mediciones.md` y en los archivos de spec de `specs/`.
 - Validación de que todos los bloques `BEGIN; ... ROLLBACK;` mencionados en la DUIA se ejecutaron sin errores en `foodstore_dev` y no dejaron cambios permanentes en el esquema.
+
+---
+
+## DUIA - Unidad 3 (TP5) Parte B: Vistas Transaccionales, Seguridad por Roles y Pruebas de Equivalencia
+
+---
+
+### Instancia 7 — Especificación técnica de las tres vistas transaccionales y de reportes
+
+**Herramienta:** Kiro
+
+**Spec / Prompt utilizado:**
+
+*"Actúa como un DBA experto en PostgreSQL y arquitecto de software. Redacta un conjunto completo de archivos de especificación técnica (`requirements.md`, `design.md` y `tasks.md`) para la carpeta `specs/` del proyecto FoodStore, con el objetivo de diseñar e implementar tres vistas: `vw_productos_vigentes` (productos vigentes con categoría, filtro `activo = TRUE`), `vw_pedidos_cliente_segura` (pedidos con datos del cliente omitiendo columnas de privacidad/PII para GRANT SELECT seguro) y `vw_detalle_pedido_completo` (detalle de pedido con nombre del producto, cantidad, precio histórico y subtotal calculado). Incluir protocolo de pruebas de equivalencia EXCEPT frente a consultas nativas. Guardar en `specs/` con el prefijo `spec_vistas_reportes_`."*
+
+**Qué generó la IA:**
+
+- `spec_vistas_reportes_requirements.md`: 4 requisitos con 22 criterios de aceptación en formato EARS (IF-THEN, WHEN-THEN, THE-SHALL). Requisito 1 define las columnas y el JOIN de `vw_productos_vigentes`; Requisito 2 define `vw_pedidos_cliente_segura` con la omisión explícita de `direccion`; Requisito 3 define `vw_detalle_pedido_completo` con la columna calculada `subtotal`; Requisito 4 establece el protocolo de pruebas EXCEPT bidireccionales y la consulta a `information_schema.columns` para verificar columnas expuestas.
+- `spec_vistas_reportes_design.md`: diseño técnico con diagrama ER Mermaid de las 5 tablas, mapeo completo columna a columna (origen → alias → vista), SQL completo de las 3 vistas con tabla de decisiones de diseño para cada una, script `vistas_reportes.sql` de 6 bloques (creación, verificación de columnas, prueba de seguridad, 6 EXCEPT bidireccionales, prueba funcional de subtotales, prueba de vigencia doble con BEGIN/ROLLBACK) y 5 casos de Error Handling.
+- `spec_vistas_reportes_tasks.md`: 11 tareas secuenciales con SQL exacto, pruebas de equivalencia EXCEPT, validación de ausencia de `direccion` en `vw_pedidos_cliente_segura` y grafo de dependencias entre tareas.
+
+**Qué se aceptó:**
+
+- La estructura completa de los tres documentos de spec con sus campos EARS y el glosario de 11 términos técnicos (VIEW, columna sensible, EXCEPT, prueba de equivalencia, subtotal calculado, column-level security, etc.).
+- La decisión de diseño de usar `INNER JOIN` en las tres vistas: garantiza consistencia referencial dado que todas las FK del esquema tienen `ON DELETE RESTRICT`, por lo que no existen filas huérfanas posibles.
+- La lógica del protocolo EXCEPT bidireccional como método de validación: ejecutar tanto `consulta_nativa EXCEPT vista` como `vista EXCEPT consulta_nativa` para descartar diferencias en ambas direcciones.
+- La tabla de decisiones de diseño del design.md que justifica cada elección: columnas explícitas (no `SELECT *`) para prevenir que columnas sensibles futuras sean heredadas automáticamente por la vista.
+- El script `vistas_reportes.sql` de 6 bloques como artefacto consolidado listo para ejecutar en `foodstore_dev`.
+
+**Qué se modificó o descartó:**
+
+- **Corrección crítica de esquema**: el prompt inicial describía la omisión de una columna de "contraseña o password". Al leer el `schema.sql` real, Kiro identificó que la tabla `cliente` del esquema FoodStore **no tiene columna de contraseña ni hash**. La columna de dato personal a omitir es `direccion` (VARCHAR 200, domicilio físico). Esta corrección quedó documentada en R2.3 del requirements, en el Overview del design y en los Notes del tasks.
+- Se descartó la variante de filtro doble `p.activo = TRUE AND c.activo = TRUE` para `vw_productos_vigentes` como requerimiento del spec (Kiro lo incluyó en el design.md como opción), ya que en el `views.sql` final se implementó únicamente el filtro sobre `producto.activo`. Kiro propuso el filtro dual pero la implementación final en OpenCode simplificó a un solo filtro. Ambas versiones son técnicamente válidas; la diferencia quedó documentada.
+- El Requisito 4 del requirements.md incluyó una consulta a `information_schema.columns` que no estaba en el prompt original pero fue aceptada como mejora: agrega verificación objetiva de las columnas expuestas por cada vista sin necesidad de ejecutar `SELECT *`.
+
+**Verificación realizada:**
+
+- Revisión manual de los tres archivos de spec generados contra el `schema.sql` real: nombres de tablas, columnas, tipos de datos y constraints verificados uno a uno.
+- Confirmación de que la columna `direccion` (VARCHAR 200) existe en `cliente` y es la única columna de dato personal presente en el esquema actual.
+- Confirmación de que `detalle_pedido` tiene `precio_unitario_historico NUMERIC(10,2)` como columna independiente de `producto.precio_lista`, validando la decisión de usar el precio histórico en el cálculo del subtotal.
+
+---
+
+### Instancia 8 — Implementación DDL de las vistas y configuración de seguridad por roles
+
+**Herramienta:** OpenCode
+
+**Spec / Prompt utilizado:**
+
+*"A partir de las especificaciones técnicas generadas en Kiro para la Parte B, implementa las tres vistas en `views.sql` con `CREATE OR REPLACE VIEW`, las pruebas de equivalencia EXCEPT bidireccionales para las tres vistas y la configuración del rol `rol_reportes` con `CREATE ROLE`, `GRANT CONNECT`, `GRANT USAGE ON SCHEMA` y `GRANT SELECT` exclusivo sobre `vw_pedidos_cliente_segura`."*
+
+**Qué generó la IA:**
+
+El archivo `views.sql` completo con cuatro secciones:
+
+1. **Tres vistas DDL** con `CREATE OR REPLACE VIEW`:
+   - `vw_productos_vigentes`: `INNER JOIN producto p` con `categoria c` sobre `id_categoria`, filtro `WHERE p.activo = TRUE`, alias `producto_nombre` y `categoria_nombre`.
+   - `vw_pedidos_cliente_segura`: `INNER JOIN pedido p` con `cliente c` sobre `id_cliente`, proyección explícita de 7 columnas (`id_pedido`, `fecha_hora`, `forma_pago`, `id_cliente`, `cliente_nombre`, `cliente_email`, `cliente_telefono`) con omisión explícita documentada en comentario SQL de la columna `direccion`.
+   - `vw_detalle_pedido_completo`: `INNER JOIN detalle_pedido dp` con `producto prod` sobre `id_producto`, columna calculada `(dp.cantidad * dp.precio_unitario_historico) AS subtotal`.
+
+2. **6 pruebas EXCEPT bidireccionales** (2 por cada vista: `vista EXCEPT nativa` y `nativa EXCEPT vista`) con comentario indicando que todas deben retornar exactamente 0 filas.
+
+3. **Configuración del rol de seguridad** `rol_reportes` con `GRANT CONNECT ON DATABASE`, `GRANT USAGE ON SCHEMA public` y `GRANT SELECT` exclusivo sobre `vw_pedidos_cliente_segura`.
+
+**Qué se aceptó:**
+
+- La estructura completa de `views.sql` con las cuatro secciones claramente delimitadas por comentarios SQL descriptivos.
+- El uso de `CREATE OR REPLACE VIEW` en lugar de `DROP VIEW / CREATE VIEW` para permitir la reejecución idempotente del script en `foodstore_dev`.
+- Los alias de columnas `cliente_nombre`, `cliente_email`, `cliente_telefono` en `vw_pedidos_cliente_segura` — nomenclatura más descriptiva que la del spec de Kiro (`nombre_cliente`, `email`, `telefono`), funcional y consistente con el estilo del proyecto.
+- La omisión de la columna `direccion` documentada explícitamente mediante comentario SQL de tres líneas, dejando trazabilidad del criterio de seguridad directamente en el código.
+- La estrategia de `GRANT SELECT` exclusivo sobre `vw_pedidos_cliente_segura` para `rol_reportes`, sin otorgar acceso a ninguna tabla base, implementando correctamente el principio de mínimo privilegio.
+
+**Qué se modificó o descartó:**
+
+- **Ajuste de esquema en `vw_productos_vigentes`**: OpenCode implementó el filtro con `WHERE p.activo = TRUE` únicamente sobre `producto`, sin el filtro dual `AND c.activo = TRUE` sobre `categoria` que el spec de Kiro incluía como Caso 2 del Error Handling. Esta simplificación es coherente con el esquema real donde el filtro de vigencia institucional principal opera sobre `producto`. Se documentó la diferencia.
+- Se descartó el comentario que OpenCode incluyó sobre "nombre actual del producto" en `vw_detalle_pedido_completo`: el nombre expuesto es el actual de la tabla `producto`, no el histórico. El precio histórico sí es el correcto (`precio_unitario_historico`), pero el nombre del producto no tiene columna histórica en el esquema. La descripción fue corregida en el comentario SQL.
+- Se ajustó el orden de los `GRANT`: OpenCode colocó `GRANT CONNECT` antes de `GRANT USAGE ON SCHEMA`, orden correcto para crear el rol correctamente en una base de datos nueva. No requirió modificación.
+
+**Verificación realizada:**
+
+- Ejecución del script `views.sql` completo en `foodstore_dev` mediante `psql -U postgres -d foodstore_dev -f views.sql`.
+- Confirmación de que las tres vistas fueron creadas sin errores (`CREATE VIEW` en consola para cada una).
+- Ejecución de las 6 pruebas EXCEPT bidireccionales:
+
+  | Prueba | Dirección | Resultado |
+  |--------|-----------|-----------|
+  | `vw_productos_vigentes` | Vista EXCEPT nativa | **0 filas** ✓ |
+  | `vw_productos_vigentes` | Nativa EXCEPT vista | **0 filas** ✓ |
+  | `vw_pedidos_cliente_segura` | Vista EXCEPT nativa | **0 filas** ✓ |
+  | `vw_pedidos_cliente_segura` | Nativa EXCEPT vista | **0 filas** ✓ |
+  | `vw_detalle_pedido_completo` | Vista EXCEPT nativa | **0 filas** ✓ |
+  | `vw_detalle_pedido_completo` | Nativa EXCEPT vista | **0 filas** ✓ |
+
+- Verificación de seguridad: consulta a `information_schema.columns WHERE table_name = 'vw_pedidos_cliente_segura' AND column_name = 'direccion'` → **0 filas**, confirmando que la columna sensible no está expuesta.
+- Ejecución de los comandos `GRANT`: `CREATE ROLE rol_reportes` completado sin errores; `GRANT SELECT ON vw_pedidos_cliente_segura TO rol_reportes` confirmado con `\dp vw_pedidos_cliente_segura` en psql.
