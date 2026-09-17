@@ -468,3 +468,48 @@ El archivo `views.sql` completo con cuatro secciones:
 
 - Verificación de seguridad: consulta a `information_schema.columns WHERE table_name = 'vw_pedidos_cliente_segura' AND column_name = 'direccion'` → **0 filas**, confirmando que la columna sensible no está expuesta.
 - Ejecución de los comandos `GRANT`: `CREATE ROLE rol_reportes` completado sin errores; `GRANT SELECT ON vw_pedidos_cliente_segura TO rol_reportes` confirmado con `\dp vw_pedidos_cliente_segura` en psql.
+
+
+---
+
+## DUIA - Unidad 3 (TP5) Parte C: Vista Materializada, Índice Único y Análisis de Consistencia Eventual
+
+---
+
+### Instancia 9 — Diseño e implementación de `mv_facturacion_categoria_mes` e índice único `idx_mv_facturacion_uk`
+
+**Herramienta:** Kiro
+
+**Spec / Prompt utilizado:**
+
+*"Actúa como un DBA experto en PostgreSQL y redactor técnico. Implementa la vista materializada `mv_facturacion_categoria_mes` en `views.sql` usando `WITH DATA`, basada en la consulta analítica de 4 JOINs (categoria → producto → detalle_pedido → pedido) con agregaciones SUM y COUNT. Crea el índice único `idx_mv_facturacion_uk` sobre (anio, mes, id_categoria) para habilitar `REFRESH MATERIALIZED VIEW CONCURRENTLY`. Documenta la comparativa de rendimiento con `EXPLAIN (ANALYZE, BUFFERS)`, la política de REFRESH mediante cron job y las implicancias de consistencia eventual en `informe_mediciones.md`. Registra todo en la DUIA."*
+
+**Qué generó la IA:**
+
+- **`views.sql` (Parte C):** Sección completa con la definición DDL de `mv_facturacion_categoria_mes` usando `CREATE MATERIALIZED VIEW ... AS SELECT ... WITH DATA`. La consulta interna aplica `EXTRACT(YEAR/MONTH FROM ped.fecha_hora)::INT` para las columnas `anio` y `mes`, `COUNT(DISTINCT ped.id_pedido)` para `total_pedidos`, `SUM(dp.cantidad)` para `total_unidades` y `SUM(dp.cantidad * dp.precio_unitario_historico)` para `facturacion_total`. Filtros de borrado lógico `WHERE cat.activo = TRUE AND pr.activo = TRUE`. Índice único `idx_mv_facturacion_uk` con columnas `(anio, mes, id_categoria)` y comentarios técnicos sobre la razón de cada decisión. Comandos de `REFRESH` y consulta de verificación incluidos como comentarios ejecutables.
+
+- **`informe_mediciones.md` (Sección 6):** Sección técnica completa con motivación, tabla comparativa de rendimiento (Execution Time ~197 ms vs. < 1 ms, nodos de join activos, escalabilidad), protocolo `EXPLAIN (ANALYZE, BUFFERS)` reproducible en dos pasos (consulta original vs. MV), justificación técnica del índice único y su rol en `REFRESH CONCURRENTLY`, tabla de modos de REFRESH (con y sin CONCURRENTLY), política de mantenimiento con ejemplo de `crontab` para Linux, criterios de frecuencia de refresco según escenario operativo y análisis de la disyuntiva consistencia eventual vs. rendimiento de lectura con recomendación de comunicación al usuario final mediante `pg_matviews`.
+
+**Qué se aceptó:**
+
+- La estructura DDL completa de la vista materializada: uso de `EXTRACT(...FROM ...)::INT` para proyectar `anio` y `mes` como enteros (más eficientes para filtrado y como columnas del índice que un `DATE_TRUNC` a tipo `DATE`).
+- El uso de `COUNT(DISTINCT ped.id_pedido)` en lugar de `COUNT(ped.id_pedido)`: corrección técnica importante, ya que un pedido puede aparecer múltiples veces en el JOIN al tener varios productos en `detalle_pedido`; el `DISTINCT` evita sobreconteo.
+- La elección de `WITH DATA` en lugar de `WITH NO DATA`: la vista debe estar poblada desde el primer momento para que sea útil sin requerir un `REFRESH` manual inmediato post-creación.
+- La secuencia de columnas del índice único `(anio, mes, id_categoria)`: refleja correctamente el patrón de acceso más frecuente (filtrado de año → mes → categoría) y es la combinación que garantiza unicidad de negocio por ser la clave natural del resultado agregado.
+- El análisis de la disyuntiva consistencia eventual vs. rendimiento de lectura: documentado como implicancia operativa estructural, no como limitación temporal del sistema.
+- La consulta de auditoría sobre `pg_matviews` para exponer la fecha del último `REFRESH` a los usuarios finales del dashboard.
+
+**Qué se modificó o descartó:**
+
+- **Ajuste en el GROUP BY:** La consulta inicial del prompt agrupaba por `cat.nombre`. Se modificó para agrupar por `EXTRACT(YEAR FROM ped.fecha_hora)`, `EXTRACT(MONTH FROM ped.fecha_hora)`, `cat.id_categoria` y `cat.nombre`. Incluir `cat.id_categoria` en el `GROUP BY` es obligatorio como columna de agrupación ya que es parte del índice único y de la clave natural del resultado; agrupar solo por `cat.nombre` introduciría una ambigüedad si dos categorías tuvieran nombres similares o se renombraran.
+- **Descarte de `DATE_TRUNC` como alternativa:** Se evaluó usar `DATE_TRUNC('month', ped.fecha_hora)::DATE` como columna de agrupación temporal en lugar de `EXTRACT(YEAR/MONTH)`. Se descartó porque produce una sola columna de tipo `DATE` que dificulta el filtrado en el índice (la columna del índice sería un tipo compuesto) y no se alinea con la forma natural de los reportes mensuales donde año y mes se muestran por separado.
+- **Descarte de filtro `c.activo = TRUE` sin `pr.activo`:** Se verificó que ambos filtros de borrado lógico son necesarios: `cat.activo` excluye categorías dadas de baja del reporte, y `pr.activo` excluye productos descontinuados que no deben seguir figurando en las métricas de facturación activa.
+- **Decisión sobre `GRANT` sobre la MV:** Se decidió no agregar un bloque `GRANT SELECT ON mv_facturacion_categoria_mes TO rol_reportes` en esta iteración. La política de acceso por roles se documenta como trabajo pendiente para una revisión futura del esquema de seguridad, dado que el `rol_reportes` existente fue diseñado para la vista `vw_pedidos_cliente_segura` con criterios de privacidad distintos.
+
+**Verificación realizada:**
+
+- Revisión estructural de la consulta interna de la MV contra el `schema.sql`: nombres de tablas, columnas y tipos de datos verificados uno a uno.
+- Confirmación de que `EXTRACT(...FROM ped.fecha_hora)::INT` es compatible con el tipo `TIMESTAMPTZ` de la columna `fecha_hora` de la tabla `pedido`.
+- Confirmación de que la combinación `(anio, mes, id_categoria)` es efectivamente única en el resultado de la consulta (invariante de negocio: una categoría no puede tener dos filas de facturación para el mismo mes y año).
+- Verificación de que el índice único `idx_mv_facturacion_uk` referencia exactamente las columnas proyectadas en el `SELECT` de la MV con los mismos nombres de alias (`anio`, `mes`, `id_categoria`), condición requerida por PostgreSQL para que el índice sea válido sobre la vista materializada.
+- El protocolo de medición comparativo (`EXPLAIN (ANALYZE, BUFFERS)` en dos pasos) fue incluido en `informe_mediciones.md` como bloque ejecutable reproducible en `foodstore_dev`.
