@@ -1,6 +1,7 @@
+-- SQLBook: Code
 -- =============================================================================
 -- SCRIPT DE INSERCIÓN MASIVA DE DATOS DE PRUEBA - FOOD STORE
--- Archivo: insertar_datos_masivos.sql
+-- Archivo: data.sql
 -- Motor: PostgreSQL
 -- =============================================================================
 
@@ -19,12 +20,23 @@ VALUES ('Bebidas y Refrescos', TRUE),
     ('Lácteos y Fiambrería', TRUE),
     ('Frutas y Verduras', TRUE),
     ('Carnicería y Granja', TRUE),
-    ('Congelados', TRUE);
+    ('Congelados', TRUE)
+ON CONFLICT (nombre) DO NOTHING;
 
 COMMIT;
 
 BEGIN;
 -- Tratamos todas las transacciones a continuación como una sola.
+SELECT setseed(0.5);
+/*
+Se fija la semilla de `random()` para que los valores generados función
+(precio_lista, stock, cantidades y sufijos de nombre) tiendan a repetirse entre
+cargas, con el objetivo de facilitar la comparación de mediciones.
+
+No es una reproducibilidad exacta: fecha_hora y el email dependen de `now()`, por
+lo que cambian en cada carga. Además, el orden en que se evalúa `random()` puede variar
+según el plan de ejecución.
+*/
 
 -- 1. Crear tabla temporal para categorías
 CREATE TEMP TABLE temp_cats AS
@@ -34,7 +46,8 @@ SELECT id_categoria, (
         )
     ) - 1 AS rn
 FROM categoria;
--- rn -> Contador auxiliar para posicionar 'algo'; en este caso, las categorías
+-- rn -> Índice numérico base 0 (ROW_NUMBER() - 1) utilizado para asociar registros
+-- mediante el operador módulo (%) y lograr una distribución equitativa de claves foráneas.
 
 -- Verificar que hay al menos una categoría para evitar divisiones por cero
 DO $$
@@ -200,8 +213,8 @@ DROP TABLE temp_peds;
 
 DROP TABLE temp_prods_activos;
 
-COMMIT;
 -- Si hay errores antes del commit, la transacción puede cancelarse.
+COMMIT;
 
 -- Actualizar estadísticas del optimizador para las tablas afectadas
 ANALYZE producto;

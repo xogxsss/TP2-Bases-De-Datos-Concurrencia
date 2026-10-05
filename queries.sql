@@ -1,8 +1,26 @@
+-- SQLBook: Code
 --------------------------------------------------------------------------------
--- TRABAJO PRÁCTICO - CATÁLOGO OFICIAL DE CONSULTAS (queries.sql)
--- Incluye consultas analíticas, rankings, subconsultas y planes de optimización
+-- TRABAJO PRÁCTICO - CATÁLOGO DE CONSULTAS (queries.sql)
+-- Incluye verificación de volumen, consultas analíticas, rankings, subconsultas
+-- y planes de optimización (la competencia / hackathon está en la Sección 5)
 -- Esquema: Food Store (PostgreSQL)
 --------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+-- SECCIÓN 0: VERIFICACIÓN DE VOLUMEN CARGADO
+-- Se ejecuta después de schema.sql + data.sql. Los valores esperados (comentarios)
+-- corresponden a la base ya cargada masivamente, partiendo de una base nueva
+-- en la que data.sql se ejecutó una sola vez.
+--------------------------------------------------------------------------------
+SELECT 'categoria' AS tabla, COUNT(*) AS total FROM categoria -- 9
+UNION ALL
+SELECT 'producto', COUNT(*) FROM producto -- 50.000
+UNION ALL
+SELECT 'cliente', COUNT(*) FROM cliente -- 20.000
+UNION ALL
+SELECT 'pedido', COUNT(*) FROM pedido -- 200.000
+UNION ALL
+SELECT 'detalle_pedido', COUNT(*) FROM detalle_pedido; -- 300.000
 
 --------------------------------------------------------------------------------
 -- SECCIÓN 1: RANKINGS CON FUNCIONES DE VENTANA (Semana 4 / Parte 3)
@@ -214,24 +232,23 @@ WHERE
 ORDER BY fecha_hora DESC;
 
 --------------------------------------------------------------------------------
--- SECCIÓN 5: CONSULTAS ANALÍTICAS Y COMPETENCIA DE OPTIMIZACIÓN
---------------------------------------------------------------------------------
-
+-- SECCIÓN 5: CONSULTAS ANALÍTICAS Y COMPETENCIA DE OPTIMIZACIÓN (HACKATHON)
 --------------------------------------------------------------------------------
 -- Trabajo Práctico - Semana 4 - Unidad 2: Optimización de Consultas
--- Parte 4: Competencia de optimización entre equipos
+-- Parte 4: Competencia de optimización entre equipos (Hackathon TP3)
 -- Esquema: Food Store
---------------------------------------------------------------------------------
+--
 -- Descripción:
--- Este script contiene la consulta analítica oficial de la competencia de
+-- Esta sección contiene la consulta analítica oficial de la competencia de
 -- optimización (cruce masivo de 4 tablas con agregación y filtros de borrado
--- lógico). Se documenta el plan de ejecución inicial, la evaluación de
--- estrategias propuestas por la IA (como índices B-Tree) y el resultado
--- del benchmarking mediante EXPLAIN ANALYZE.
+-- lógico) y los pasos de prueba de estrategias de indexación y reescritura.
+-- Se documenta el plan de ejecución inicial, la evaluación de estrategias
+-- propuestas por la IA (como índices B-Tree) y el resultado del benchmarking
+-- mediante EXPLAIN ANALYZE.
 --------------------------------------------------------------------------------
 
 --------------------------------------------------------------------------------
--- 1. CONSULTA ANALÍTICA DE LA COMPETENCIA (Medición Inicial)
+-- 5.1 CONSULTA ANALÍTICA DE LA COMPETENCIA (Medición Inicial)
 --------------------------------------------------------------------------------
 -- Métrica de referencia obtenida (Execution Time): ~197.59 ms
 -- Plan seleccionado por PostgreSQL: Parallel Seq Scan con Hash Joins y Parallel Hash Aggregate.
@@ -247,7 +264,7 @@ SELECT
 FROM
     categoria c
     JOIN producto pr ON pr.id_categoria = c.id_categoria
-    JOIN detalle_pedido dp dp ON dp.id_producto = pr.id_producto
+    JOIN detalle_pedido dp ON dp.id_producto = pr.id_producto
     JOIN pedido p ON p.id_pedido = dp.id_pedido
 WHERE
     c.activo = TRUE
@@ -255,10 +272,15 @@ WHERE
 GROUP BY
     c.nombre;
 
--- =============================================================================
--- HACKATHON TP3 - COMPETENCIA DE OPTIMIZACIÓN
--- Archivo de pruebas: competencia.sql
--- =============================================================================
+--------------------------------------------------------------------------------
+-- 5.2 HACKATHON TP3 - ESTRATEGIAS SOBRE LA CONSULTA DE PRODUCTOS POR CATEGORÍA
+--------------------------------------------------------------------------------
+-- Nota: el enunciado original filtraba por la categoría 'Pizzas', que no existe
+-- en el dataset de data.sql. Se usa 'Comidas Rápidas', que sí está cargada.
+--
+-- Cada estrategia que crea un índice se ejecuta dentro de BEGIN ... ROLLBACK,
+-- según el protocolo de seguridad del proyecto, para no dejar índices de prueba
+-- en la base de desarrollo.
 
 -- -----------------------------------------------------------------------------
 -- PASO 1: LA LÍNEA BASE (Medición Original)
@@ -269,7 +291,7 @@ SELECT p.id_producto, p.nombre, p.precio_lista, p.stock
 FROM producto p
     JOIN categoria c ON p.id_categoria = c.id_categoria
 WHERE
-    c.nombre = 'Pizzas'
+    c.nombre = 'Comidas Rápidas'
     AND p.precio_lista BETWEEN 1500 AND 4500
     AND p.activo = TRUE
 ORDER BY p.stock DESC
@@ -277,8 +299,10 @@ LIMIT 20;
 
 -- -----------------------------------------------------------------------------
 -- PASO 2: PROBAR ESTRATEGIA 1 (Índice Parcial Compuesto)
--- Apunta a las columnas exactas del filtro y ordenamiento.
+-- Apunta a las columnas del filtro y del ordenamiento.
 -- -----------------------------------------------------------------------------
+BEGIN;
+
 CREATE INDEX idx_comp_estrategia1 ON producto (
     id_categoria,
     precio_lista,
@@ -287,14 +311,26 @@ CREATE INDEX idx_comp_estrategia1 ON producto (
 WHERE
     activo = TRUE;
 
--- (Volvemos a correr el EXPLAIN ANALYZE del Paso 1 para ver si mejoró)
--- Anotamos el resultado
--- Corremos:
--- DROP INDEX idx_comp_estrategia1;
+ANALYZE producto;
+
+-- Se vuelve a medir la misma consulta del Paso 1, ahora con el índice presente.
+EXPLAIN
+ANALYZE
+SELECT p.id_producto, p.nombre, p.precio_lista, p.stock
+FROM producto p
+    JOIN categoria c ON p.id_categoria = c.id_categoria
+WHERE
+    c.nombre = 'Comidas Rápidas'
+    AND p.precio_lista BETWEEN 1500 AND 4500
+    AND p.activo = TRUE
+ORDER BY p.stock DESC
+LIMIT 20;
+
+ROLLBACK;
 
 -- -----------------------------------------------------------------------------
 -- PASO 3: PROBAR ESTRATEGIA 2 (Reescritura con Subconsulta)
--- Modifica la consulta para evitar el JOIN gigante. No requiere índice nuevo.
+-- Modifica la consulta para evitar el JOIN. No requiere índice nuevo.
 -- -----------------------------------------------------------------------------
 EXPLAIN
 ANALYZE
@@ -309,7 +345,7 @@ WHERE
         SELECT id_categoria
         FROM categoria
         WHERE
-            nombre = 'Pizzas'
+            nombre = 'Comidas Rápidas'
     )
     AND precio_lista BETWEEN 1500 AND 4500
     AND activo = TRUE
@@ -317,14 +353,30 @@ ORDER BY stock DESC
 LIMIT 20;
 
 -- -----------------------------------------------------------------------------
--- PASO 4: PROBAR ESTRATEGIA 3 (Índice BRIN - Cuidado, puede ser trampa)
--- Usa un bloque diseñado para Big Data secuencial.
+-- PASO 4: PROBAR ESTRATEGIA 3 (Índice BRIN)
+-- Índice pensado para datos grandes con correlación física con el orden de la
+-- tabla; en este dataset se evalúa para comprobar si aporta o perjudica.
 -- -----------------------------------------------------------------------------
+BEGIN;
+
 CREATE INDEX idx_comp_estrategia3 ON producto USING BRIN (precio_lista, stock);
 
--- (Corremos EXPLAIN ANALYZE del Paso 1 para ver qué daño o mejora causó)
--- Corremos:
---  DROP INDEX idx_comp_estrategia3;
+ANALYZE producto;
+
+-- Se vuelve a medir la misma consulta del Paso 1, ahora con el índice BRIN.
+EXPLAIN
+ANALYZE
+SELECT p.id_producto, p.nombre, p.precio_lista, p.stock
+FROM producto p
+    JOIN categoria c ON p.id_categoria = c.id_categoria
+WHERE
+    c.nombre = 'Comidas Rápidas'
+    AND p.precio_lista BETWEEN 1500 AND 4500
+    AND p.activo = TRUE
+ORDER BY p.stock DESC
+LIMIT 20;
+
+ROLLBACK;
 
 --------------------------------------------------------------------------------
 -- JUSTIFICACIÓN TÉCNICA Y VEREDICTO DE ÍNDICES ANALÍTICOS
@@ -336,7 +388,7 @@ sobre todas las tablas porque no existían rutas de acceso directo para las
 claves foráneas involucradas en los 'Hash Joins'. 
 */
 
--- Limpieza transaccional de índices de prueba evaluados
+-- Limpieza de índices de pruebas anteriores (si existieran en la base)
 BEGIN;
 
 DROP INDEX IF EXISTS idx_opt_producto_categoria;
