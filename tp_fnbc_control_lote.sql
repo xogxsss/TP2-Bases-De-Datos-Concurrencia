@@ -35,6 +35,22 @@ DESCOMPOSICION POR TEOREMA DE HEATH (sobre DF2: R -> D)
   Prueba de reunion sin perdida:
     R1 join R2 = control_lote_almacen  (sin tuplas espurias ni perdidas)
 
+JUSTIFICACION TEORICA DE LA REUNION SIN PERDIDA (Punto 4.2.f)
+  Atributo comun entre R1 y R2:
+    Atributos(R1) interseccion Atributos(R2) = {responsable_control_id}
+
+  Criterio de superclave sobre el atributo comun:
+    En R1 = responsable_deposito(R, D), la PK es {R}.
+    La cerradura R+ en R1 = {R, D} = todos los atributos de R1.
+    Por tanto, R es superclave (clave candidata) de R1.
+
+  Conclusion por Teorema de Heath:
+    Como R -> D pertenece al conjunto de DFs y R es superclave de R1,
+    se garantiza matematicamente que R1 join R2 reconstruye exactamente
+    la instancia original sin tuplas espurias ni perdida de informacion.
+    No pueden generarse combinaciones (L, D, R) inexistentes porque cada
+    valor de R en R2 tiene exactamente un valor de D en R1.
+
 PROTOCOLO DE SEGURIDAD
   Todo el script esta encapsulado en BEGIN ... COMMIT.
   Para ejecutar en modo prueba, reemplazar COMMIT por ROLLBACK.
@@ -359,9 +375,29 @@ ON CONFLICT DO NOTHING;
 -- ============================================================
 -- PASO 5 -- VERIFICACION DE REUNION SIN PERDIDA (LOSSLESS-JOIN)
 -- ============================================================
--- Se usa EXCEPT en ambas direcciones para comparar la tabla
--- original con la vista de compatibilidad.
+-- JUSTIFICACION TEORICA (Punto 4.2.f -- Teorema de Heath)
+-- --------------------------------------------------------
+-- La propiedad lossless-join esta garantizada matematicamente
+-- porque el atributo comun de la reunion, responsable_control_id
+-- (R), es la clave primaria de R1 (responsable_deposito).
 --
+-- Argumento formal:
+--   Atributos(R1) interseccion Atributos(R2) = {R}
+--   PK(R1) = {R}  -->  R es superclave de R1
+--   DF valida: R -> D pertenece al conjunto de DFs
+--
+--   Por Teorema de Heath: si el atributo comun es superclave
+--   en alguna de las tablas descompuestas, entonces
+--   R1 join R2 = relacion_original  (sin perdida, sin espurias)
+--
+-- Consecuencia practica:
+--   Cada valor de R en R2 tiene exactamente un valor de D en R1
+--   (garantizado por la PK de R1). Por eso el JOIN no puede
+--   "inventar" nuevas combinaciones (L, D, R); solo reconstruye
+--   las que existian en la instancia original.
+--
+-- VERIFICACION PRACTICA con EXCEPT en ambas direcciones
+-- -------------------------------------------------------
 -- EXCEPT elimina duplicados y compara conjuntos de tuplas.
 -- Si los dos conjuntos son identicos, ambas direcciones
 -- devuelven el conjunto vacio (0 filas).
@@ -374,40 +410,87 @@ ON CONFLICT DO NOTHING;
 --   Ambas devuelven 0 filas --> descomposicion lossless-join OK
 -- ============================================================
 
--- Direccion A: hay filas en la vista que NO estan en el original?
--- Resultado esperado: (0 rows) -- no hay tuplas espurias.
-SELECT
-    'Direccion A -- Tuplas en vista NO presentes en original (esperado: 0 filas)' AS prueba,
-    lote_id,
-    deposito_id,
-    responsable_control_id
-FROM vw_control_lote_almacen_compatibilidad
+-- ----------------------------------------------------------
+-- Direccion A: vw_compatibilidad EXCEPT original
+-- Comprueba que la vista NO contiene tuplas espurias.
+-- Una tupla espuria seria una combinacion (lote, deposito,
+-- responsable) que el JOIN invento y que no existia en la
+-- relacion original. Resultado esperado: (0 rows).
+-- Envuelto en subquery para compatibilidad con DBeaver,
+-- que agrega LIMIT automaticamente al final de cada SELECT.
+-- ----------------------------------------------------------
+SELECT * FROM (
+    SELECT
+        lote_id,
+        deposito_id,
+        responsable_control_id
+    FROM vw_control_lote_almacen_compatibilidad
 
-EXCEPT
+    EXCEPT
 
-SELECT
-    'Direccion A -- Tuplas en vista NO presentes en original (esperado: 0 filas)',
-    lote_id,
-    deposito_id,
-    responsable_control_id
-FROM control_lote_almacen;
+    SELECT
+        lote_id,
+        deposito_id,
+        responsable_control_id
+    FROM control_lote_almacen
+) dir_a;
 
--- Direccion B: hay filas en el original que NO estan en la vista?
--- Resultado esperado: (0 rows) -- no se perdio ninguna tupla.
-SELECT
-    'Direccion B -- Tuplas en original NO recuperadas por la vista (esperado: 0 filas)' AS prueba,
-    lote_id,
-    deposito_id,
-    responsable_control_id
-FROM control_lote_almacen
+-- ----------------------------------------------------------
+-- Direccion B: original EXCEPT vw_compatibilidad
+-- Comprueba que NO se perdio ninguna tupla de la relacion
+-- original durante la descomposicion y migracion. Una fila
+-- aqui significaria que esa tupla no puede ser reconstruida
+-- por la reunion R1 join R2. Resultado esperado: (0 rows).
+-- Envuelto en subquery por la misma razon que Direccion A.
+-- ----------------------------------------------------------
+SELECT * FROM (
+    SELECT
+        lote_id,
+        deposito_id,
+        responsable_control_id
+    FROM control_lote_almacen
 
-EXCEPT
+    EXCEPT
 
-SELECT
-    'Direccion B -- Tuplas en original NO recuperadas por la vista (esperado: 0 filas)',
-    lote_id,
-    deposito_id,
-    responsable_control_id
-FROM vw_control_lote_almacen_compatibilidad;
+    SELECT
+        lote_id,
+        deposito_id,
+        responsable_control_id
+    FROM vw_control_lote_almacen_compatibilidad
+) dir_b;
 
 COMMIT;
+
+-- PARTE 2
+EXPLAIN ANALYZE
+SELECT c.nombre AS categoria,
+       SUM(dp.cantidad * dp.precio_unitario_historico) AS total_vendido -- No hay columna 'subtotal' en dp; lo calculamos acá
+FROM detalle_pedido dp
+JOIN producto pr      ON pr.id_producto  = dp.id_producto
+JOIN categoria c      ON c.id_categoria  = pr.id_categoria
+JOIN pedido ped       ON ped.id_pedido   = dp.id_pedido
+WHERE DATE(ped.fecha_hora) = CURRENT_DATE
+GROUP BY c.nombre
+ORDER BY total_vendido DESC
+LIMIT 5;
+
+-- ============================================================
+-- LIMPIEZA TEMPORAL (ejecutar manualmente en caso de error)
+-- Orden obligatorio: primero objetos dependientes, luego padres.
+-- ============================================================
+
+-- ROLLBACK;
+-- DROP VIEW IF EXISTS vw_control_lote_almacen_compatibilidad;
+
+-- DROP TABLE IF EXISTS control_lote_responsable;
+-- DROP TABLE IF EXISTS responsable_deposito;
+-- DROP TABLE IF EXISTS control_lote_almacen;
+
+-- DROP TABLE IF EXISTS responsable_control;
+-- DROP TABLE IF EXISTS lote;
+-- DROP TABLE IF EXISTS deposito;
+
+-- DROP DOMAIN IF EXISTS codigo_producto_dom;
+-- DROP DOMAIN IF EXISTS dni_arg_dom;
+
+
