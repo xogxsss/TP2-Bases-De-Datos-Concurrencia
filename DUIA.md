@@ -164,87 +164,99 @@
 
 ---
 
-### DUIA - TP6 Parte 1: Normalizacion Avanzada (FNBC) en ControlLoteAlmacen
+### DUIA - Unidad 4 (TP6) 
 
-- **Herramienta:** Kiro (generacion de spec en `specs/tp_fnbc_control_lote.md` y script DDL `tp_fnbc_control_lote.sql`).
-- **Spec o prompt utilizado:** _"Generar el script DDL tp_fnbc_control_lote.sql para la base foodstore_dev que demuestre la deteccion y correccion de una violacion FNBC en la tabla control_lote_almacen(lote_id, deposito_id, responsable_control_id), aplicando el Teorema de Heath para descomponer en dos relaciones en FNBC, con vista de compatibilidad y prueba de equivalencia de conjuntos con EXCEPT en ambas direcciones."_
-- **Que genero:** La spec unificada `specs/tp_fnbc_control_lote.md` (requirements con sintaxis EARS, design con diagramas Mermaid, tabla de dominios y plan de tareas), y el script DDL `tp_fnbc_control_lote.sql` con los seis pasos: dominios reutilizables (`codigo_producto_dom`, `dni_arg_dom`), tablas maestras, esquema original defectuoso, descomposicion FNBC en R1 (`responsable_deposito`) y R2 (`control_lote_responsable`), vista de compatibilidad `vw_control_lote_almacen_compatibilidad`, migracion de datos y prueba lossless-join con `EXCEPT`.
-- **Que se acepto:** La estructura general de la descomposicion por Teorema de Heath, la FK de R2 apuntando a `responsable_deposito` (no a `responsable_control` directamente) como mecanismo critico para garantizar la reunion sin perdida, el uso de `SELECT DISTINCT` en la migracion a R1 para colapsar las filas redundantes de `(responsable=801, deposito=30)`, y los dominios PostgreSQL como mecanismo de centralizacion de reglas de validacion.
-- **Que se modifico o descarto:**
-  - **Codificacion del encabezado:** las versiones iniciales del script incluian caracteres Unicode no ASCII en el bloque de comentarios del encabezado (flechas `->`, simbolos de verificacion, acentos). Al ejecutar el script en psql, el motor reporto `ERROR: caracter con secuencia de bytes 0x90 en codificacion WIN1252 no tiene equivalente en UTF8`, lo que impidio que el `BEGIN` se procesara y dejo todas las sentencias subsiguientes fuera de la transaccion. Se reescribio el encabezado completo usando exclusivamente caracteres ASCII; los literales de datos con acentos en los `INSERT` se mantuvieron porque se procesan correctamente dentro de la transaccion ya iniciada.
-  - **Tipo de dato `fecha_vencimiento`:** la IA propuso inicialmente `TIMESTAMPTZ`. Se rechazo y se mantuvo `DATE` porque la caducidad legal de un alimento se expresa como dia calendario; usar `TIMESTAMPTZ` introduciria ambiguedad sobre el momento exacto del vencimiento. La comparacion de negocio relevante (`fecha_vencimiento < CURRENT_DATE`) opera sobre fechas puras.
-  - **Fechas de prueba:** el enunciado proveia fechas en 2026 (`2026-10-20`, `2026-11-15`, `2026-12-31`). Al incorporar el `CHECK (fecha_vencimiento >= CURRENT_DATE)`, esas fechas ya estaban vencidas al momento de ejecucion (octubre 2026). Se ajustaron a 2027 para que los datos de prueba superen la validacion sin modificar la restriccion de integridad.
-  - **Trigger de consistencia cruzada:** en iteraciones previas se incluyo un trigger PL/pgSQL (`fn_check_deposito_consistencia`) sobre `responsable_deposito` para detectar inconsistencias entre R1 y `control_lote_almacen` durante la migracion. Se descarto porque la restriccion queda implicita en el orden de ejecucion del script (poblar R1 con `DISTINCT` antes de poblar R2) y el trigger introducia complejidad innecesaria para el alcance del ejercicio.
-- **Verificacion realizada:** Ejecucion del script en `foodstore_dev` mediante `psql -U postgres -d foodstore_dev -f tp_fnbc_control_lote.sql`. Las pruebas de equivalencia de conjuntos con `EXCEPT` en ambas direcciones devolvieron `(0 rows)`:
-  - **Direccion A** (`vw_control_lote_almacen_compatibilidad EXCEPT control_lote_almacen`): 0 filas, confirmando que la vista no genera tuplas espurias.
-  - **Direccion B** (`control_lote_almacen EXCEPT vw_control_lote_almacen_compatibilidad`): 0 filas, confirmando que ninguna tupla de la instancia original fue perdida por la descomposicion.
-  - La propiedad lossless-join quedo demostrada experimentalmente sobre la instancia de prueba `(501,30,801)`, `(502,30,801)`, `(503,31,802)`.
+## Parte 1: Normalización Avanzada (FNBC) en `control_lote_almacen`
 
----
+* **Herramienta:** Kiro (generación de especificación en `specs/tp_fnbc_control_lote.md` y script `tp_fnbc_control_lote.sql`).
+* **Prompt / Requisito:** Generar el DDL `tp_fnbc_control_lote.sql` para la base `foodstore_dev` que detecte y corrija una violación de la FNBC en la tabla `control_lote_almacen(lote_id, deposito_id, responsable_control_id)`, aplicando el **Teorema de Heath** para descomponerla en dos relaciones en FNBC, con vista de compatibilidad y prueba de equivalencia mediante `EXCEPT` bidireccional.
+* **Qué se generó:** El DDL en 6 pasos que incluye dominios reutilizables (`codigo_producto_dom`, `dni_arg_dom`), tablas maestras, esquema defectuoso original, descomposición en FNBC ($R_1$: `responsable_deposito` y $R_2$: `control_lote_responsable`), vista de compatibilidad `vw_control_lote_almacen_compatibilidad`, migración de datos y prueba *lossless-join*.
+* **Qué se aceptó:**
+* Descomposición por Teorema de Heath.
+* Clave foránea de $R_2$ apuntando a `responsable_deposito` para garantizar la reunión sin pérdida.
+* Uso de `SELECT DISTINCT` en la migración a $R_1$ para colapsar filas redundantes.
+* Dominios de PostgreSQL para centralizar reglas de validación.
 
-### DUIA - TP6 Parte 1 (Actualización): Carga de Datos de Prueba y Correcciones de Idempotencia
 
-- **Herramienta:** Kiro (generacion y corrección iterativa de `data.sql`).
-- **Spec o prompt utilizado:** _"Actualizar data.sql para agregar datos de prueba específicos de ventas del día actual (3.000 pedidos con CURRENT_DATE) y registros FNBC adicionales en deposito, lote, responsable_control y control_lote_almacen, manteniendo intacta la estructura DDL existente, usando ON CONFLICT DO NOTHING y generate_series para idempotencia."_
-- **Qué generó:** Un bloque adicional (Bloque 2) en `data.sql` con: 3.000 pedidos de fecha actual distribuidos con hasta 4 ítems por pedido (offsets +0/+1/+2/+3 sobre el índice de producto para evitar colisiones de PK compuesta), y 5 registros adicionales en `deposito` (ids 32–36), `lote` (ids 504–508, fechas en 2027), `responsable_control` (ids 803–807) y `control_lote_almacen` (8 tuplas totales, replicando la anomalía DF2 en los lotes 504–505 con responsable 803 y depósito 32).
-- **Qué se aceptó:** La estrategia de offsets numéricos consecutivos (+1, +2, +3) para garantizar unicidad en la PK compuesta `(id_pedido, id_producto)` sin necesidad de subconsultas de deduplicación, y el rango de IDs separados de los datos del script FNBC para evitar colisiones con `ON CONFLICT`.
-- **Qué se modificó o descartó:**
-  - **`ON CONFLICT` en productos y clientes:** la primera versión del Bloque 1 carecía de cláusula `ON CONFLICT` en los INSERT de `producto` y `cliente`, provocando `ERROR: llave duplicada viola restricción de unicidad «producto_nombre_key»` al reejecutar. Se agregaron `ON CONFLICT (nombre) DO NOTHING` y `ON CONFLICT (email) DO NOTHING` respectivamente.
-  - **Tablas temporales sin DROP previo:** el Bloque 2 usaba `CREATE TEMP TABLE` sin verificar existencia previa. Al reejecutar en una sesión abierta, el motor reportó `ERROR: la relación «tmp_prods» ya existe`. Se incorporó `DROP TABLE IF EXISTS` antes de cada `CREATE TEMP TABLE` en ambos bloques.
-  - **Error de sintaxis en comentario inline:** el texto `(5 registros adicionales)` quedó accidentalmente en la misma línea que `ANALYZE detalle_pedido;`, generando `ERROR: error de sintaxis en o cerca de «5»`. Se corrigió separando el comentario en una línea `--` independiente.
-  - **FK violation en `control_lote_almacen`:** como consecuencia del error anterior, el INSERT de `deposito` no se ejecutó antes del INSERT en `control_lote_almacen`, fallando por `(deposito_id)=(32) no está presente en la tabla «deposito»`. Se reordenaron todos los INSERT del Bloque 2 dentro de un único `BEGIN...COMMIT` garantizando que `deposito`, `lote` y `responsable_control` se inserten antes de `control_lote_almacen`.
-  - **Centralización de DROPs:** a pedido explícito, los `DROP TABLE` de tablas temporales se extrajeron de su posición inline (entre sentencias de negocio) y se centralizaron en una sección documentada al final del archivo, comentados, con nota aclaratoria sobre su comportamiento en sesiones largas.
-- **Verificación realizada:** Ejecución completa de `data.sql` en `foodstore_dev` con `\i data.sql`. Resultado sin errores: `INSERT 0 49978` productos (22 colisiones absorbidas), `INSERT 0 20000` clientes, `INSERT 0 200000` pedidos históricos, `INSERT 0 3000` pedidos del día actual, `INSERT 0 2400 + 1000 + 300` detalles del día, `INSERT 0 5` en `deposito` y `control_lote_almacen`. Los `NOTICE` de `la tabla no existe, omitiendo` en los `DROP IF EXISTS` son el comportamiento esperado en primera ejecución.
+* **Qué se modificó o descartó:**
+* **Codificación de encabezado:** Se eliminaron símbolos Unicode del encabezado del script que causaban un error de conversión en `psql` bajo codificación `WIN1252/UTF-8` al iniciar la transacción (`BEGIN`).
+* **Tipo de dato `fecha_vencimiento`:** Se rechazó `TIMESTAMPTZ` y se mantuvo `DATE` para reflejar la caducidad como fecha calendario pura.
+* **Fechas de prueba:** Se actualizaron las fechas de los datos de prueba a 2027 para superar la restricción `CHECK (fecha_vencimiento >= CURRENT_DATE)`.
+* **Trigger redundante:** Se descartó el trigger `fn_check_deposito_consistencia` al quedar garantizada la consistencia por el orden de migración de los datos.
+
+
+* **Verificación realizada:** Ejecución mediante `psql` en `foodstore_dev`. Las pruebas de equivalencia de conjuntos con `EXCEPT` bidireccional entre la vista de compatibilidad y la tabla original devolvieron `(0 rows)`, demostrando la propiedad *lossless-join*.
 
 ---
 
-### DUIA - TP6 Parte 2: Análisis de Rendimiento con EXPLAIN ANALYZE (Consulta Top 5 Categorías)
+## Parte 1 (Actualización): Carga de Datos de Prueba e Idempotencia
 
-- **Herramienta:** Kiro (adaptación de consulta al esquema real y análisis del plan de ejecución).
-- **Spec o prompt utilizado:** _"Adaptar la consulta EXPLAIN ANALYZE de Top 5 categorías por ventas del día a los nombres de columnas reales del esquema de FoodStore (pedido.fecha_hora en lugar de pedido.fecha, eliminando columnas eliminado inexistentes) y documentar el diagnóstico del plan antes y después de cargar pedidos del día actual."_
-- **Qué generó:** La consulta adaptada con `DATE(ped.fecha_hora) = CURRENT_DATE` en lugar de `ped.fecha = CURRENT_DATE`, eliminando los filtros `dp.eliminado = FALSE` y `ped.eliminado = FALSE` ausentes en el esquema físico. Análisis del plan de ejecución identificando el `Parallel Seq Scan` sobre `pedido` como cuello de botella al evaluar más de 200.000 filas para filtrar por la función `DATE()` sobre `fecha_hora`.
-- **Qué se aceptó:** La identificación del nodo `Parallel Seq Scan` como operación dominante y la interpretación del cambio en el algoritmo de ordenamiento de `quicksort` a `top-N heapsort` al procesar datos reales del día.
-- **Qué se modificó o descartó:** La consulta original referenciaba `pedido.fecha` (columna inexistente) y columnas `eliminado` en `detalle_pedido` y `pedido` que no existen en el esquema de FoodStore. Se corrigieron contra el `schema.sql` real antes de ejecutar.
-- **Verificación realizada:** Ejecución de `EXPLAIN ANALYZE` en dos escenarios documentados con las métricas concretas de la tabla comparativa:
+* **Herramienta:** Kiro (generación y corrección de `data.sql`).
+* **Prompt / Requisito:** Actualizar `data.sql` para incorporar 3.000 pedidos del día actual (`CURRENT_DATE`) y registros FNBC adicionales, manteniendo idempotencia con `ON CONFLICT DO NOTHING` y `generate_series`.
+* **Qué se generó:** Un bloque adicional en `data.sql` con 3.000 pedidos diarios con *offsets* numéricos en la clave compuesta de `detalle_pedido` y 5 registros adicionales para tablas maestras y de control de lote.
+* **Qué se aceptó:** Estrategia de *offsets* para asegurar unicidad en `(id_pedido, id_producto)` y rangos de ID independientes para evitar colisiones.
+* **Qué se modificó o descartó:**
+* **Cláusula `ON CONFLICT`:** Se agregó a las inserciones de `producto` y `cliente` para prevenir errores de unicidad en reejecuciones.
+* **Tablas temporales:** Se incorporó `DROP TABLE IF EXISTS` antes de cada `CREATE TEMP TABLE` para evitar colisiones en sesiones abiertas.
+* **Corrección de errores de sintaxis y FK:** Se corrigió un comentario desordenado que impedía la ejecución del bloque de depósitos, envolviendo todas las inserciones en un único bloque transaccional `BEGIN...COMMIT`.
+* **Centralización de DROPs:** Se trasladaron las sentencias de limpieza al final del archivo.
+
+
+* **Verificación realizada:** Ejecución exitosa de `data.sql` en `foodstore_dev` (`\i data.sql`), insertando o procesando sin errores el histórico completo y los datos del día actual.
+
+---
+
+## Parte 2: Análisis de Rendimiento con `EXPLAIN ANALYZE` (Consulta Top 5 Categorías)
+
+* **Herramienta:** Kiro (adaptación de consulta y análisis de plan de ejecución).
+* **Prompt / Requisito:** Adaptar la consulta del Top 5 de categorías por ventas del día al esquema real de la base de datos (`pedido.fecha_hora`) y diagnosticar los cuellos de botella con `EXPLAIN ANALYZE`.
+* **Qué se generó:** Consulta adaptada utilizando `DATE(ped.fecha_hora) = CURRENT_DATE` y diagnóstico del plan de ejecución identificando la lectura secuencial paralela sobre la tabla de pedidos.
+* **Qué se aceptó:** Diagnóstico del nodo `Parallel Seq Scan` como cuello de botella dominante debido al uso de la función `DATE()` sobre una columna sin índice funcional.
+* **Qué se modificó o descartó:** Se removieron referencias a columnas inexistentes en el esquema físico (`pedido.fecha` y campos `eliminado`).
+* **Verificación realizada:** Medición con `EXPLAIN ANALYZE`:
 
 | Métrica / Operación | Sin Pedidos del Día | Con Pedidos del Día | Observación Técnica |
-| :--- | :--- | :--- | :--- |
-| Tiempo de Ejecución | 25.21 ms | 132.42 ms | Incremento por procesamiento efectivo de datos de la fecha actual. |
-| Filas Retornadas | 0 filas | 5 filas | Top 5 de categorías calculado con montos reales. |
-| Lectura de `pedido` | 200.000 descartadas / 0 de hoy | 199.391 descartadas / 7.218 de hoy | `Parallel Seq Scan` con filtro por función `DATE()` sobre `fecha_hora`. |
-| Lectura de `detalle_pedido` | 0 filas (`never executed`) | 15.238 filas procesadas | Lectura e integración de ítems para cálculo de subtotal. |
-| Workers Paralelos | 1 worker | 2 workers | Paralelización para procesamiento intensivo de datos. |
-| Método de Ordenamiento | `quicksort` (memoria) | `top-N heapsort` (memoria) | Algoritmo optimizado para retención de los 5 mayores subtotales. |
-
-  El diagnóstico principal identificado: el filtro `DATE(ped.fecha_hora) = CURRENT_DATE` aplica una función sobre la columna, impidiendo el uso de cualquier índice sobre `fecha_hora`. Con 200.000+ pedidos históricos evaluados en cada ejecución para retener únicamente los 7.218 del día actual, el `Parallel Seq Scan` descarta el 97.4% de las filas leídas. Este cuello de botella es candidato a optimización mediante un índice funcional `CREATE INDEX ON pedido (DATE(fecha_hora))` o reescritura del filtro con rango explícito `fecha_hora >= CURRENT_DATE AND fecha_hora < CURRENT_DATE + 1`.
+| --- | --- | --- | --- |
+| **Tiempo de Ejecución** | 25.21 ms | 132.42 ms | Incremento por procesamiento de transacciones del día. |
+| **Filas Retornadas** | 0 filas | 5 filas | Top 5 calculado con importes reales. |
+| **Lectura de `pedido**` | 200.000 descartadas | 199.391 descartadas / 7.218 de hoy | `Parallel Seq Scan` evaluando la función `DATE()`. |
+| **Lectura de `detalle_pedido**` | 0 filas | 15.238 filas procesadas | Lectura de ítems para cálculo de subtotal. |
+| **Workers Paralelos** | 1 worker | 2 workers | Paralelización para el procesamiento de datos. |
+| **Ordenamiento** | `quicksort` | `top-N heapsort` | Algoritmo optimizado para retención del Top 5. |
 
 ---
 
-### DUIA - TP6 Parte 2: Desnormalizacion Controlada (Top 5 Categorias por Ventas del Dia)
+## Parte 2: Desnormalización Controlada (Top 5 Categorías por Ventas del Día)
 
-- **Herramienta:** Kiro (generacion del script `tp_desnormalizacion_top_categorias.sql`, analisis del plan de ejecucion y tabla comparativa de rendimiento).
-- **Spec o prompt utilizado:** _"Implementar la solucion de desnormalizacion controlada (Opcion A: Vista Materializada con columna fecha) para la consulta del Top 5 de categorias por ventas del dia en foodstore_dev. Crear mv_ventas_categoria_diario agrupando por DATE(fecha_hora) y c.nombre, con indice unico compuesto (fecha, categoria) para habilitar REFRESH CONCURRENTLY y funcion fn_refrescar_top5_categorias() como mecanismo de sincronizacion automatica via pg_cron."_
-- **Que genero:** El script `tp_desnormalizacion_top_categorias.sql` con tres objetos: la vista materializada `mv_ventas_categoria_diario`, el indice unico compuesto `idx_mv_ventas_fecha_cat` sobre `(fecha, categoria)`, y la funcion PL/pgSQL `fn_refrescar_top5_categorias()` con `RETURNS void`. El script incluye comentarios ASCII tecnicos por cada objeto, `DROP ... IF EXISTS CASCADE` para idempotencia completa, y una seccion final documentando las tres opciones de invocacion automatica (pg_cron, crontab del SO, scheduler externo) con los comandos exactos.
-- **Que se acepto:** La estrategia de agrupar por `DATE(ped.fecha_hora)` y `c.nombre` para almacenar el historico completo en la MV, evitando la restriccion de PostgreSQL que impide el uso de funciones volatiles (`CURRENT_DATE`, `NOW()`) en el DDL de una vista materializada. El indice unico compuesto `(fecha, categoria)` como requisito tecnico obligatorio para `REFRESH MATERIALIZED VIEW CONCURRENTLY` y como acelerador del patron de acceso dominante `WHERE fecha = CURRENT_DATE`. El uso de `precio_unitario_historico` de `detalle_pedido` en lugar de `precio_lista` de `producto`, preservando la exactitud contable historica ante modificaciones de precio posteriores al cierre del pedido.
-- **Que se modifico o descarto:**
-  - **Opcion con CURRENT_DATE en el DDL:** la propuesta inicial incluia `WHERE DATE(ped.fecha_hora) = CURRENT_DATE` directamente en la definicion de la MV. PostgreSQL la rechaza porque `CURRENT_DATE` es una funcion volatil; el motor no puede garantizar un resultado estable para el snapshot de la MV. Se descarto en favor de la Opcion A (columna `fecha` en la MV), que es inmutable por definicion.
-  - **Indice unico sobre columna simple `(categoria)`:** se evaluo inicialmente un indice sobre `(categoria)` solamente. Se descarto porque `categoria` no es unica en la MV (el mismo nombre de categoria aparece en multiples fechas), lo que impide el refresco concurrente. El indice compuesto `(fecha, categoria)` es la clave natural real de la relacion y satisface ambos requisitos: unicidad y aceleracion del filtro de fecha.
-- **Verificacion realizada:**
-  - Ejecucion del script en `foodstore_dev` y `foodstore_test` sin errores. Los `DROP ... IF EXISTS CASCADE` garantizaron idempotencia en reejecutar.
-  - Medicion de rendimiento con `EXPLAIN ANALYZE` en dos escenarios:
+* **Herramienta:** Kiro (generación del script `tp_desnormalizacion_top_categorias.sql`, análisis de plan de ejecución y tabla comparativa).
+* **Prompt / Requisito:** Implementar una estrategia de desnormalización controlada mediante una vista materializada (`mv_ventas_categoria_diario`), un índice único compuesto sobre `(fecha, categoria)` y una función PL/pgSQL (`fn_refrescar_top5_categorias()`) para sincronización concurrente.
+* **Qué se generó:** El script `tp_desnormalizacion_top_categorias.sql` con los tres objetos DDL, comentarios técnicos ASCII, sentencias idempotentes (`DROP ... IF EXISTS CASCADE`) y documentación para invocación programada (`pg_cron` / `crontab`).
+* **Qué se aceptó:**
+* Agrupamiento por `DATE(ped.fecha_hora)` y `c.nombre` para preservar el histórico en la vista materializada y eludir la restricción de PostgreSQL sobre funciones volátiles (`CURRENT_DATE`) en DDL.
+* Índice único compuesto `(fecha, categoria)` para permitir `REFRESH MATERIALIZED VIEW CONCURRENTLY` y optimizar la lectura directa.
+* Uso de `precio_unitario_historico` de `detalle_pedido` para garantizar la exactitud contable transaccional.
 
-| Metrica / Aspecto | Antes (Tablas 3FN Originales) | Despues (Vista Materializada) |
-| :--- | :--- | :--- |
-| Consulta SQL | 4 JOINs + GROUP BY + filtro `DATE(fecha_hora)` en tiempo real | Lectura directa sobre `mv_ventas_categoria_diario` con `WHERE fecha = CURRENT_DATE` |
-| Tiempo de Ejecucion | 132.42 ms | **0.070 ms** |
-| Reduccion de Tiempo | -- | **99.94% mas rapida (~1.890x de ganancia)** |
-| Nodo Dominante | `Parallel Seq Scan` sobre `pedido` (200.000+ filas) | `Bitmap Index Scan` sobre `idx_mv_ventas_fecha_cat` |
-| Filas Leidas / Evaluadas | 200.000+ pedidos + 15.238 detalles | **14 filas preagregadas** del dia (`Heap Blocks: exact=1`) |
-| Workers Paralelos | 2 workers lanzados | Ninguno (no necesario) |
-| JOINs en tiempo real | 4 (`detalle_pedido`, `producto`, `categoria`, `pedido`) | 0 |
-| Paginas de disco leidas | Multiples buffers sobre 4 tablas | **1 bloque** (`Heap Blocks: exact=1`) |
-| Metodo de Ordenamiento | `top-N heapsort` (25kB) | `top-N heapsort` (25kB) |
-| Planning Time | ~0.5-1 ms | **0.083 ms** |
 
-  - Auditoria de consistencia con `EXCEPT` bidireccional entre la consulta 3FN original y la consulta sobre la MV: ambas direcciones devolvieron `(0 rows)`, confirmando ausencia total de desincronizacion o inconsistencia entre el esquema normalizado y la estructura desnormalizada.
-  - Commit de versionado registrado: `feat: creacion del script tp_desnormalizacion_top_categorias.sql para desnormalizacion controlada`.
+* **Qué se modificó o descartó:**
+* **Filtro dinámico en DDL:** Se descartó incluir `WHERE DATE(ped.fecha_hora) = CURRENT_DATE` en el DDL de la vista por restricción del motor ante funciones volátiles.
+* **Índice simple:** Se descartó el índice sobre `(categoria)` al no ser único en la vista materializada, impidiendo el refresco concurrente.
+
+
+* **Verificación realizada:**
+* Ejecución exitosa e idempotente del script en `foodstore_dev` y `foodstore_test`.
+* **Medición de rendimiento (`EXPLAIN ANALYZE`):**
+
+
+
+| Métrica / Aspecto | Antes (Tablas 3FN) | Después (Vista Materializada) |
+| --- | --- | --- |
+| **Consulta SQL** | 4 JOINs + GROUP BY + filtro `DATE()` en tiempo real | Lectura directa sobre la MV con `WHERE fecha = CURRENT_DATE` |
+| **Tiempo de Ejecución** | 132.42 ms | **0.070 ms** |
+| **Reducción de Tiempo** | — | **99.94% más rápida (~1.890x de ganancia)** |
+| **Nodo Dominante** | `Parallel Seq Scan` sobre `pedido` (200.000+ filas) | `Bitmap Index Scan` sobre `idx_mv_ventas_fecha_cat` |
+| **Filas Procesadas** | 200.000+ pedidos + 15.238 detalles | **14 filas preagregadas** (`Heap Blocks: exact=1`) |
+| **Workers / JOINs** | 2 workers / 4 JOINs | 0 workers / 0 JOINs |
+| **Lectura de Disco** | Múltiples *buffers* sobre 4 tablas | **1 bloque** en disco (`Heap Blocks: exact=1`) |
+
+* **Auditoría de consistencia:** La comparación mediante `EXCEPT` bidireccional entre las tablas operativas y la vista materializada devolvió `(0 rows)`, confirmando la ausencia de desincronización o inconsistencia de datos.
+* **Versionado:** Commit registrado en Git (`feat: creacion del script tp_desnormalizacion_top_categorias.sql para desnormalizacion controlada`).
