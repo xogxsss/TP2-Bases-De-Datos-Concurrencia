@@ -179,3 +179,41 @@
   - **Direccion A** (`vw_control_lote_almacen_compatibilidad EXCEPT control_lote_almacen`): 0 filas, confirmando que la vista no genera tuplas espurias.
   - **Direccion B** (`control_lote_almacen EXCEPT vw_control_lote_almacen_compatibilidad`): 0 filas, confirmando que ninguna tupla de la instancia original fue perdida por la descomposicion.
   - La propiedad lossless-join quedo demostrada experimentalmente sobre la instancia de prueba `(501,30,801)`, `(502,30,801)`, `(503,31,802)`.
+
+---
+
+### DUIA - TP6 Parte 1 (Actualización): Carga de Datos de Prueba y Correcciones de Idempotencia
+
+- **Herramienta:** Kiro (generacion y corrección iterativa de `data.sql`).
+- **Spec o prompt utilizado:** _"Actualizar data.sql para agregar datos de prueba específicos de ventas del día actual (3.000 pedidos con CURRENT_DATE) y registros FNBC adicionales en deposito, lote, responsable_control y control_lote_almacen, manteniendo intacta la estructura DDL existente, usando ON CONFLICT DO NOTHING y generate_series para idempotencia."_
+- **Qué generó:** Un bloque adicional (Bloque 2) en `data.sql` con: 3.000 pedidos de fecha actual distribuidos con hasta 4 ítems por pedido (offsets +0/+1/+2/+3 sobre el índice de producto para evitar colisiones de PK compuesta), y 5 registros adicionales en `deposito` (ids 32–36), `lote` (ids 504–508, fechas en 2027), `responsable_control` (ids 803–807) y `control_lote_almacen` (8 tuplas totales, replicando la anomalía DF2 en los lotes 504–505 con responsable 803 y depósito 32).
+- **Qué se aceptó:** La estrategia de offsets numéricos consecutivos (+1, +2, +3) para garantizar unicidad en la PK compuesta `(id_pedido, id_producto)` sin necesidad de subconsultas de deduplicación, y el rango de IDs separados de los datos del script FNBC para evitar colisiones con `ON CONFLICT`.
+- **Qué se modificó o descartó:**
+  - **`ON CONFLICT` en productos y clientes:** la primera versión del Bloque 1 carecía de cláusula `ON CONFLICT` en los INSERT de `producto` y `cliente`, provocando `ERROR: llave duplicada viola restricción de unicidad «producto_nombre_key»` al reejecutar. Se agregaron `ON CONFLICT (nombre) DO NOTHING` y `ON CONFLICT (email) DO NOTHING` respectivamente.
+  - **Tablas temporales sin DROP previo:** el Bloque 2 usaba `CREATE TEMP TABLE` sin verificar existencia previa. Al reejecutar en una sesión abierta, el motor reportó `ERROR: la relación «tmp_prods» ya existe`. Se incorporó `DROP TABLE IF EXISTS` antes de cada `CREATE TEMP TABLE` en ambos bloques.
+  - **Error de sintaxis en comentario inline:** el texto `(5 registros adicionales)` quedó accidentalmente en la misma línea que `ANALYZE detalle_pedido;`, generando `ERROR: error de sintaxis en o cerca de «5»`. Se corrigió separando el comentario en una línea `--` independiente.
+  - **FK violation en `control_lote_almacen`:** como consecuencia del error anterior, el INSERT de `deposito` no se ejecutó antes del INSERT en `control_lote_almacen`, fallando por `(deposito_id)=(32) no está presente en la tabla «deposito»`. Se reordenaron todos los INSERT del Bloque 2 dentro de un único `BEGIN...COMMIT` garantizando que `deposito`, `lote` y `responsable_control` se inserten antes de `control_lote_almacen`.
+  - **Centralización de DROPs:** a pedido explícito, los `DROP TABLE` de tablas temporales se extrajeron de su posición inline (entre sentencias de negocio) y se centralizaron en una sección documentada al final del archivo, comentados, con nota aclaratoria sobre su comportamiento en sesiones largas.
+- **Verificación realizada:** Ejecución completa de `data.sql` en `foodstore_dev` con `\i data.sql`. Resultado sin errores: `INSERT 0 49978` productos (22 colisiones absorbidas), `INSERT 0 20000` clientes, `INSERT 0 200000` pedidos históricos, `INSERT 0 3000` pedidos del día actual, `INSERT 0 2400 + 1000 + 300` detalles del día, `INSERT 0 5` en `deposito` y `control_lote_almacen`. Los `NOTICE` de `la tabla no existe, omitiendo` en los `DROP IF EXISTS` son el comportamiento esperado en primera ejecución.
+
+---
+
+### DUIA - TP6 Parte 2: Análisis de Rendimiento con EXPLAIN ANALYZE (Consulta Top 5 Categorías)
+
+- **Herramienta:** Kiro (adaptación de consulta al esquema real y análisis del plan de ejecución).
+- **Spec o prompt utilizado:** _"Adaptar la consulta EXPLAIN ANALYZE de Top 5 categorías por ventas del día a los nombres de columnas reales del esquema de FoodStore (pedido.fecha_hora en lugar de pedido.fecha, eliminando columnas eliminado inexistentes) y documentar el diagnóstico del plan antes y después de cargar pedidos del día actual."_
+- **Qué generó:** La consulta adaptada con `DATE(ped.fecha_hora) = CURRENT_DATE` en lugar de `ped.fecha = CURRENT_DATE`, eliminando los filtros `dp.eliminado = FALSE` y `ped.eliminado = FALSE` ausentes en el esquema físico. Análisis del plan de ejecución identificando el `Parallel Seq Scan` sobre `pedido` como cuello de botella al evaluar más de 200.000 filas para filtrar por la función `DATE()` sobre `fecha_hora`.
+- **Qué se aceptó:** La identificación del nodo `Parallel Seq Scan` como operación dominante y la interpretación del cambio en el algoritmo de ordenamiento de `quicksort` a `top-N heapsort` al procesar datos reales del día.
+- **Qué se modificó o descartó:** La consulta original referenciaba `pedido.fecha` (columna inexistente) y columnas `eliminado` en `detalle_pedido` y `pedido` que no existen en el esquema de FoodStore. Se corrigieron contra el `schema.sql` real antes de ejecutar.
+- **Verificación realizada:** Ejecución de `EXPLAIN ANALYZE` en dos escenarios documentados con las métricas concretas de la tabla comparativa:
+
+| Métrica / Operación | Sin Pedidos del Día | Con Pedidos del Día | Observación Técnica |
+| :--- | :--- | :--- | :--- |
+| Tiempo de Ejecución | 25.21 ms | 132.42 ms | Incremento por procesamiento efectivo de datos de la fecha actual. |
+| Filas Retornadas | 0 filas | 5 filas | Top 5 de categorías calculado con montos reales. |
+| Lectura de `pedido` | 200.000 descartadas / 0 de hoy | 199.391 descartadas / 7.218 de hoy | `Parallel Seq Scan` con filtro por función `DATE()` sobre `fecha_hora`. |
+| Lectura de `detalle_pedido` | 0 filas (`never executed`) | 15.238 filas procesadas | Lectura e integración de ítems para cálculo de subtotal. |
+| Workers Paralelos | 1 worker | 2 workers | Paralelización para procesamiento intensivo de datos. |
+| Método de Ordenamiento | `quicksort` (memoria) | `top-N heapsort` (memoria) | Algoritmo optimizado para retención de los 5 mayores subtotales. |
+
+  El diagnóstico principal identificado: el filtro `DATE(ped.fecha_hora) = CURRENT_DATE` aplica una función sobre la columna, impidiendo el uso de cualquier índice sobre `fecha_hora`. Con 200.000+ pedidos históricos evaluados en cada ejecución para retener únicamente los 7.218 del día actual, el `Parallel Seq Scan` descarta el 97.4% de las filas leídas. Este cuello de botella es candidato a optimización mediante un índice funcional `CREATE INDEX ON pedido (DATE(fecha_hora))` o reescritura del filtro con rango explícito `fecha_hora >= CURRENT_DATE AND fecha_hora < CURRENT_DATE + 1`.
