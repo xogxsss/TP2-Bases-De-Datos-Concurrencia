@@ -217,3 +217,34 @@
 | Método de Ordenamiento | `quicksort` (memoria) | `top-N heapsort` (memoria) | Algoritmo optimizado para retención de los 5 mayores subtotales. |
 
   El diagnóstico principal identificado: el filtro `DATE(ped.fecha_hora) = CURRENT_DATE` aplica una función sobre la columna, impidiendo el uso de cualquier índice sobre `fecha_hora`. Con 200.000+ pedidos históricos evaluados en cada ejecución para retener únicamente los 7.218 del día actual, el `Parallel Seq Scan` descarta el 97.4% de las filas leídas. Este cuello de botella es candidato a optimización mediante un índice funcional `CREATE INDEX ON pedido (DATE(fecha_hora))` o reescritura del filtro con rango explícito `fecha_hora >= CURRENT_DATE AND fecha_hora < CURRENT_DATE + 1`.
+
+---
+
+### DUIA - TP6 Parte 2: Desnormalizacion Controlada (Top 5 Categorias por Ventas del Dia)
+
+- **Herramienta:** Kiro (generacion del script `tp_desnormalizacion_top_categorias.sql`, analisis del plan de ejecucion y tabla comparativa de rendimiento).
+- **Spec o prompt utilizado:** _"Implementar la solucion de desnormalizacion controlada (Opcion A: Vista Materializada con columna fecha) para la consulta del Top 5 de categorias por ventas del dia en foodstore_dev. Crear mv_ventas_categoria_diario agrupando por DATE(fecha_hora) y c.nombre, con indice unico compuesto (fecha, categoria) para habilitar REFRESH CONCURRENTLY y funcion fn_refrescar_top5_categorias() como mecanismo de sincronizacion automatica via pg_cron."_
+- **Que genero:** El script `tp_desnormalizacion_top_categorias.sql` con tres objetos: la vista materializada `mv_ventas_categoria_diario`, el indice unico compuesto `idx_mv_ventas_fecha_cat` sobre `(fecha, categoria)`, y la funcion PL/pgSQL `fn_refrescar_top5_categorias()` con `RETURNS void`. El script incluye comentarios ASCII tecnicos por cada objeto, `DROP ... IF EXISTS CASCADE` para idempotencia completa, y una seccion final documentando las tres opciones de invocacion automatica (pg_cron, crontab del SO, scheduler externo) con los comandos exactos.
+- **Que se acepto:** La estrategia de agrupar por `DATE(ped.fecha_hora)` y `c.nombre` para almacenar el historico completo en la MV, evitando la restriccion de PostgreSQL que impide el uso de funciones volatiles (`CURRENT_DATE`, `NOW()`) en el DDL de una vista materializada. El indice unico compuesto `(fecha, categoria)` como requisito tecnico obligatorio para `REFRESH MATERIALIZED VIEW CONCURRENTLY` y como acelerador del patron de acceso dominante `WHERE fecha = CURRENT_DATE`. El uso de `precio_unitario_historico` de `detalle_pedido` en lugar de `precio_lista` de `producto`, preservando la exactitud contable historica ante modificaciones de precio posteriores al cierre del pedido.
+- **Que se modifico o descarto:**
+  - **Opcion con CURRENT_DATE en el DDL:** la propuesta inicial incluia `WHERE DATE(ped.fecha_hora) = CURRENT_DATE` directamente en la definicion de la MV. PostgreSQL la rechaza porque `CURRENT_DATE` es una funcion volatil; el motor no puede garantizar un resultado estable para el snapshot de la MV. Se descarto en favor de la Opcion A (columna `fecha` en la MV), que es inmutable por definicion.
+  - **Indice unico sobre columna simple `(categoria)`:** se evaluo inicialmente un indice sobre `(categoria)` solamente. Se descarto porque `categoria` no es unica en la MV (el mismo nombre de categoria aparece en multiples fechas), lo que impide el refresco concurrente. El indice compuesto `(fecha, categoria)` es la clave natural real de la relacion y satisface ambos requisitos: unicidad y aceleracion del filtro de fecha.
+- **Verificacion realizada:**
+  - Ejecucion del script en `foodstore_dev` y `foodstore_test` sin errores. Los `DROP ... IF EXISTS CASCADE` garantizaron idempotencia en reejecutar.
+  - Medicion de rendimiento con `EXPLAIN ANALYZE` en dos escenarios:
+
+| Metrica / Aspecto | Antes (Tablas 3FN Originales) | Despues (Vista Materializada) |
+| :--- | :--- | :--- |
+| Consulta SQL | 4 JOINs + GROUP BY + filtro `DATE(fecha_hora)` en tiempo real | Lectura directa sobre `mv_ventas_categoria_diario` con `WHERE fecha = CURRENT_DATE` |
+| Tiempo de Ejecucion | 132.42 ms | **0.070 ms** |
+| Reduccion de Tiempo | -- | **99.94% mas rapida (~1.890x de ganancia)** |
+| Nodo Dominante | `Parallel Seq Scan` sobre `pedido` (200.000+ filas) | `Bitmap Index Scan` sobre `idx_mv_ventas_fecha_cat` |
+| Filas Leidas / Evaluadas | 200.000+ pedidos + 15.238 detalles | **14 filas preagregadas** del dia (`Heap Blocks: exact=1`) |
+| Workers Paralelos | 2 workers lanzados | Ninguno (no necesario) |
+| JOINs en tiempo real | 4 (`detalle_pedido`, `producto`, `categoria`, `pedido`) | 0 |
+| Paginas de disco leidas | Multiples buffers sobre 4 tablas | **1 bloque** (`Heap Blocks: exact=1`) |
+| Metodo de Ordenamiento | `top-N heapsort` (25kB) | `top-N heapsort` (25kB) |
+| Planning Time | ~0.5-1 ms | **0.083 ms** |
+
+  - Auditoria de consistencia con `EXCEPT` bidireccional entre la consulta 3FN original y la consulta sobre la MV: ambas direcciones devolvieron `(0 rows)`, confirmando ausencia total de desincronizacion o inconsistencia entre el esquema normalizado y la estructura desnormalizada.
+  - Commit de versionado registrado: `feat: creacion del script tp_desnormalizacion_top_categorias.sql para desnormalizacion controlada`.

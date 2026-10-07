@@ -4,7 +4,7 @@ EJERCICIO FNBC -- CONTROL DE LOTE EN ALMACEN
 Archivo : tp_fnbc_control_lote.sql
 Motor   : PostgreSQL 17
 Base    : foodstore_dev
-Autora  : Agustina Micaela Guzman
+Autora  : Agustina Micaela Guzmán
 =============================================================================
 
 OBJETIVO
